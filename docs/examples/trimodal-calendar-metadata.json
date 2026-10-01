@@ -1,0 +1,36 @@
+{
+  "seed": 20261001,
+  "curve_rng_seed": 20261002,
+  "events": 60,
+  "calendar_means_bp": [
+    1800.0,
+    3500.0,
+    5200.0
+  ],
+  "calendar_sds_years": [
+    70.0,
+    100.0,
+    90.0
+  ],
+  "weights": [
+    0.3333333333333333,
+    0.3333333333333333,
+    0.3333333333333333
+  ],
+  "realized_counts": [
+    14,
+    25,
+    21
+  ],
+  "curve": "intcal20",
+  "curve_arrays_sha256": "3f3f6df06cb7252161a207784a2de8ed8d4b0aa0eb117be0ecfbc3445380396b",
+  "helper": "chronologer.utils.simulate_c14",
+  "interpolation": "linear",
+  "measurement_sd_years": [
+    25,
+    30,
+    35,
+    40
+  ],
+  "reported_age_rounding_years": 0.1
+}

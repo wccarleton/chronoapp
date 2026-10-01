@@ -1,0 +1,21 @@
+id,c14_mean,c14_err,curve
+Example A,2500,30,intcal20
+Example B,2550,30,intcal20
+Example C,2600,30,intcal20
+Example D,2380,35,intcal20
+Example E,2425,25,intcal20
+Example F,2460,30,intcal20
+Example G,2480,25,intcal20
+Example H,2510,35,intcal20
+Example I,2525,30,intcal20
+Example J,2540,25,intcal20
+Example K,2560,30,intcal20
+Example L,2575,35,intcal20
+Example M,2590,25,intcal20
+Example N,2610,30,intcal20
+Example O,2625,25,intcal20
+Example P,2640,35,intcal20
+Example Q,2660,30,intcal20
+Example R,2680,25,intcal20
+Example S,2710,35,intcal20
+Example T,2760,30,intcal20

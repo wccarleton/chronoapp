@@ -1,0 +1,225 @@
+"""Thin boundary to Chronologer's density API; no statistical model here."""
+
+import logging
+import time
+from pathlib import Path
+from typing import Annotated
+from typing import Literal
+import math
+
+import chronologer
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import FileResponse, PlainTextResponse
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from .calibration import Determination, require_local_curve
+from ..services.jobs import get_jobs, TERMINAL
+from ..services.posterior_plots import posterior_plots
+
+router = APIRouter()
+logger = logging.getLogger(__name__)
+# Fixed execution-benchmark settings. Do not accept arbitrary sampler options.
+SAMPLING = dict(draws=250, tune=250, chains=2, random_seed=912)
+Finite = Annotated[float, Field(strict=True, allow_inf_nan=False)]
+Positive = Annotated[float, Field(strict=True, gt=0, allow_inf_nan=False)]
+
+
+class DensitySettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    older: Finite
+    younger: Finite
+    mean: Finite
+    mean_sd: Positive
+    sd_scale: Positive
+
+    @model_validator(mode="after")
+    def ordered(self):
+        if self.older <= self.younger:
+            raise ValueError("Older cal BP must exceed Younger cal BP.")
+        return self
+
+
+class DensityRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    determinations: list[Determination] = Field(min_length=1, max_length=100)
+    settings: DensitySettings
+
+
+def fit_in_worker(request: dict, sampling: dict, progress_callback=None):
+    start = time.perf_counter()
+    mixture = "events" in request
+    if mixture:
+        from scipy.stats import norm, uniform
+        from chronologer.distributions import calrcarbon
+        rows = request['events']
+        observations = []
+        for row in rows:
+            p = row['parameters']
+            if row['distribution'] == 'calrcarbon':
+                curve = chronologer.load_calcurve(p['curve'], quiet=True)
+                observations.append(calrcarbon(curve, -p['c14_mean'], p['c14_err']))
+            elif row['distribution'] == 'normal':
+                observations.append(norm(-p['mean'], p['sd']))
+            else:
+                observations.append(uniform(-p['upper'], p['upper'] - p['lower']))
+        result = chronologer.fit_gaussian_mixture(observations, request['K_max'],
+                    progress_callback=progress_callback, **sampling)
+    else:
+        rows, settings = request["determinations"], request["settings"]
+        curve = chronologer.load_calcurve(rows[0]["curve"], quiet=True)
+        result = chronologer.fit_radiocarbon_density(
+            [-row["age"] for row in rows], [row["error"] for row in rows], curve,
+            lower=-settings["older"], upper=-settings["younger"],
+            mean_prior=-settings["mean"], mean_prior_sd=settings["mean_sd"],
+            sd_prior_scale=settings["sd_scale"], progress_callback=progress_callback, **sampling)
+    posterior = result.posterior["posterior"].to_dataset()
+    stats = result.posterior["sample_stats"].to_dataset()
+    divergences = int(stats["diverging"].values.sum())
+    warnings = ["Development benchmark: convergence has not been assessed; do not treat this short run as a final scientific result."]
+    if divergences:
+        warnings.append(f"{divergences} divergent transitions: this fit may be unreliable.")
+    if "reached_max_treedepth" in stats and stats["reached_max_treedepth"].values.any():
+        warnings.append("Maximum tree depth reached for some samples.")
+    diagnostics = {}
+    if mixture:
+        import numpy as np
+        weights = posterior['weights'].values.reshape(-1, request['K_max'])
+        diagnostics = dict(priors=result.priors, weight_mean=weights.mean(axis=0).tolist(),
+                           weight_below_005=(weights < .05).mean(axis=0).tolist(),
+                           weight_interval=np.quantile(weights, [.025, .975], axis=0).tolist())
+    return {"model": "gaussian_mixture" if mixture else "truncated_normal_hierarchy", "coordinate_system": "negative_bp",
+            "diagnostics": diagnostics,
+            "density": {key: values.tolist() for key, values in result.density.items()},
+            "marginals": posterior_plots(posterior, rows),
+            "posterior": {"type": "xarray.DataTree", "variables": list(posterior.data_vars),
+                          "sizes": dict(posterior.sizes)},
+            "sampling": sampling, "divergences": divergences, "warnings": warnings,
+            "elapsed_seconds": time.perf_counter() - start}
+
+
+class DensityJobRequest(DensityRequest):
+    label: str = Field(default="Density fit", min_length=1, max_length=250)
+
+
+class MixtureEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(min_length=1, max_length=120)
+    distribution: Literal['calrcarbon', 'normal', 'uniform']
+    parameters: dict
+    datum: Literal['BP1950'] = 'BP1950'
+
+    @model_validator(mode='after')
+    def valid_measurement(self):
+        p = self.parameters
+        keys = {'calrcarbon': ('c14_mean', 'c14_err'), 'normal': ('mean', 'sd'), 'uniform': ('lower', 'upper')}[self.distribution]
+        if any(type(p.get(key)) not in (int, float) or not math.isfinite(p[key]) for key in keys):
+            raise ValueError('Measurement parameters must be finite numbers.')
+        if self.distribution == 'uniform':
+            if p['lower'] >= p['upper']:
+                raise ValueError('Uniform upper must exceed lower.')
+        elif p[keys[1]] <= 0:
+            raise ValueError('Measurement error/SD must be positive.')
+        if self.distribution == 'calrcarbon' and not isinstance(p.get('curve'), str):
+            raise ValueError('Radiocarbon events require a curve.')
+        return self
+
+
+class MixtureJobRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    events: list[MixtureEvent] = Field(min_length=1, max_length=100)
+    K_max: int = Field(default=5, strict=True, ge=1, le=20)
+    label: str = Field(default='Mixture fit', min_length=1, max_length=250)
+
+
+@router.post('/mixture/jobs', status_code=202)
+def start_mixture(request: MixtureJobRequest):
+    curves = {e.parameters['curve'] for e in request.events if e.distribution == 'calrcarbon'}
+    # Existing calrcarbon interpolation is cached at class level. Each worker
+    # starts fresh; refuse mixed curves rather than silently using the wrong one.
+    if len(curves) > 1:
+        raise HTTPException(422, 'This mixture workflow currently requires one shared radiocarbon curve.')
+    for curve in curves:
+        require_local_curve(curve)
+    try:
+        return get_jobs().submit(fit_in_worker, (request.model_dump(), SAMPLING.copy()), request.label)
+    except ValueError as error:
+        raise HTTPException(429, str(error)) from None
+    except OSError:
+        raise HTTPException(503, 'Cannot write inference logs. Check the local log directory permissions.') from None
+
+
+def submit_density(request: DensityRequest, label="Density fit"):
+    curves = {row.curve for row in request.determinations}
+    if len(curves) != 1 or None in curves:
+        raise HTTPException(422, "This density benchmark requires one shared calibration curve for all events.")
+    require_local_curve(next(iter(curves)))
+    try:
+        return get_jobs().submit(fit_in_worker, (request.model_dump(), SAMPLING.copy()), label)
+    except ValueError as error:
+        raise HTTPException(429, str(error)) from None
+    except OSError:
+        logger.exception("Could not create inference log")
+        raise HTTPException(503, "Cannot write inference logs. Check the local log directory permissions.") from None
+
+
+def job_or_404(identifier, result=False):
+    try:
+        return get_jobs().get(identifier, result=result)
+    except KeyError:
+        raise HTTPException(404, "Run not found. The server may have restarted or its history expired.") from None
+
+
+@router.post("/density/jobs", status_code=202)
+def start_density(request: DensityJobRequest):
+    return submit_density(request, request.label)
+
+
+@router.get("/jobs")
+def list_jobs():
+    manager = get_jobs()
+    return {"jobs": manager.list(), "max_workers": manager.workers, "log_directory": str(manager.log_dir)}
+
+
+@router.get("/jobs/{identifier}")
+def get_job(identifier: str):
+    return job_or_404(identifier)
+
+
+@router.get("/jobs/{identifier}/result")
+def job_result(identifier: str):
+    job = job_or_404(identifier, result=True)
+    if job["status"] == "completed":
+        return job["result"]
+    if job["status"] == "failed":
+        raise HTTPException(422 if job["error_type"] == "ValueError" else 500,
+                            f"{job['error']} See this run's log for details.")
+    raise HTTPException(409, "Run cancelled." if job["status"] == "cancelled" else "Run has not finished.")
+
+
+@router.post("/jobs/{identifier}/cancel")
+def cancel_job(identifier: str):
+    job_or_404(identifier)
+    return get_jobs().cancel(identifier)
+
+
+@router.get("/jobs/{identifier}/log")
+def job_log(identifier: str, download: bool = False):
+    job = job_or_404(identifier)
+    path = Path(job["log_path"])
+    if download:
+        return FileResponse(path, media_type="text/plain", filename=path.name)
+    # Bound each live log fetch; the download endpoint returns the whole file.
+    with path.open("rb") as stream:
+        stream.seek(max(0, path.stat().st_size - 65536))
+        text = stream.read().decode("utf-8", errors="replace")
+    return PlainTextResponse(text)
+
+
+@router.post("/density")
+def fit_density(request: DensityRequest):
+    """Compatibility endpoint; the browser uses the nonblocking jobs API."""
+    job = submit_density(request)
+    while job["status"] not in TERMINAL:
+        time.sleep(.1)
+        job = job_or_404(job["id"])
+    return job_result(job["id"])

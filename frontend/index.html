@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <script src="js/theme.js?v=theme-icons-1"></script>
+    <title>Chronologer · Project</title>
+    <link rel="stylesheet" href="css/app.css">
+  </head>
+  <body>
+    <header class="app-header">
+      <a class="brand" href="./" aria-label="Chronologer home"><img class="brand-mark" src="assets/chronologer_icon_light.png" alt="" width="40" height="40">Chronologer</a>
+      <span class="app-caption">Archaeological chronology</span><span id="project-indicator" class="environment">Local workspace</span>
+      <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Dark mode" aria-pressed="false" title="Switch to dark mode">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M20.5 13A8.5 8.5 0 0 1 11 3.5 8.5 8.5 0 1 0 20.5 13Z"/></svg>
+        <span>Dark mode</span>
+      </button>
+    </header>
+    <section id="run-monitor" class="run-monitor" aria-label="Background inference" hidden>
+      <div id="run-overview" role="status" aria-live="polite"></div>
+      <div id="run-list"></div>
+      <details id="run-log" hidden><summary>Run messages</summary><p id="run-log-location" class="help"></p><pre id="run-log-text"></pre></details>
+    </section>
+    <nav class="tabs" aria-label="Workspaces" role="tablist">
+      <button id="project-tab" role="tab" aria-selected="true" aria-controls="project-panel" tabindex="0">Project</button>
+      <button id="calibrate-tab" role="tab" aria-selected="false" aria-controls="calibrate-panel" tabindex="-1">Calibrate</button>
+      <button id="summarize-tab" role="tab" aria-selected="false" aria-controls="summarize-panel" tabindex="-1">Summarize</button>
+      <button id="phase-tab" role="tab" aria-selected="false" aria-controls="phase-panel" tabindex="-1">Phase <span class="tag">Preview</span></button>
+      <button id="depth-tab" role="tab" aria-selected="false" aria-controls="depth-panel" tabindex="-1">Depth <span class="tag">Preview</span></button>
+      <button id="process-tab" role="tab" aria-selected="false" aria-controls="process-panel" tabindex="-1">Process Lab <span class="tag">Preview</span></button>
+    </nav>
+    <main>
+      <section id="project-panel" role="tabpanel" aria-labelledby="project-tab">
+        <div class="workspace-heading"><div><h1>Project</h1><p>Keep your event observations together in one .chrono file.</p></div></div>
+        <section class="panel project-panel">
+          <div class="project-actions" aria-label="Project file actions">
+            <button class="button secondary" data-project-action="new">New Project</button>
+            <button class="button secondary" data-project-action="open">Open…</button>
+            <button class="button primary" data-project-action="save">Save</button>
+            <button class="button secondary" data-project-action="save-as">Save As…</button>
+            <button class="button secondary" data-project-action="csv">Import CSV…</button>
+          </div>
+          <details class="project-copy-tools"><summary>Import / export a copy</summary><div class="project-actions">
+            <button class="button secondary" data-project-action="open-copy">Open copy…</button>
+            <button class="button secondary" data-project-action="download">Download copy</button>
+          </div></details>
+          <label for="project-name">Project name</label><input id="project-name" maxlength="120" value="Untitled project">
+          <p id="project-location" class="help">Not saved to a file yet</p>
+          <p id="project-details" class="help"></p>
+          <p id="project-status" role="status" aria-live="polite"></p>
+          <p class="help">CSV columns: <code>id,c14_mean,c14_err</code>; optional <code>curve,label,datum,include_in_calibration</code>. Ages use conventional ¹⁴C BP; error is 1σ. Defaults: the current Calibration curve, BP1950, and inclusion on. Up to 100 events. Import replaces the dataset and keeps the original CSV in the project.</p>
+          <p class="help">Open selects a project file. Save updates that file; Save As chooses a different file. Recalibrate after opening to regenerate plots.</p>
+          <div id="project-event-editor">
+            <p class="help">Master event table. Radiocarbon edits are shared with Calibration. p1–p3 retain the parameter names shown beneath each value; labels are optional. Datum records the calendar convention without converting values. Radiocarbon measurements and calibration plots remain BP1950; Normal and Uniform inputs are stored for future modelling.</p>
+            <div class="table-scroll"><table class="input-table project-event-table"><thead><tr><th>Event ID</th><th>Label</th><th>Datum</th><th>Distribution</th><th>p1</th><th>p2</th><th>p3</th><th>Curve</th><th><span class="sr-only">Remove</span></th></tr></thead><tbody id="project-events"></tbody></table></div>
+            <button id="add-event" class="button text-button" type="button">+ Add event</button>
+          </div>
+        </section>
+      </section>
+      <section id="calibrate-panel" role="tabpanel" aria-labelledby="calibrate-tab" hidden>
+        <div class="workspace-heading"><div><h1>Radiocarbon calibration</h1><p>Explore calendar-time estimates for one or more determinations.</p></div><span id="connection-status" class="connection">Connecting to engine…</span></div>
+        <div class="workspace-grid">
+          <section class="panel input-panel" aria-labelledby="determinations-heading">
+            <div class="panel-heading"><h2 id="determinations-heading">Determinations</h2><span id="row-count" class="count">1 sample</span></div>
+            <form id="calibration-form" novalidate>
+              <p class="help">Enter conventional radiocarbon ages and laboratory errors (1σ), in years BP.</p>
+              <p class="help">Radiocarbon events only. Checked circles are included when calibrating; unchecking keeps the event in your project.</p>
+              <div class="table-scroll"><table class="input-table determination-table"><thead><tr><th scope="col">Include</th><th scope="col">Sample ID</th><th scope="col">Distribution</th><th scope="col"><sup>14</sup>C age BP</th><th scope="col">Error ±</th><th scope="col">Curve</th><th scope="col"><span class="sr-only">Remove</span></th></tr></thead><tbody id="determination-rows"></tbody></table></div>
+              <button type="button" id="add-row" class="button text-button">+ Add determination</button>
+              <button type="button" class="button secondary" data-project-action="csv">Load CSV…</button>
+              <p id="csv-status" class="help" role="status" aria-live="polite"></p>
+              <div class="curve-control"><label for="curve-select">Curve preview / default for new rows</label><select id="curve-select" required disabled><option value="">Loading available curves…</option></select><p class="help">Each determination keeps its own curve. This selection previews a curve and supplies the default for new rows or CSV rows without a curve; it does not change existing rows.</p><p id="curve-description" class="help">Curve availability is supplied by the scientific engine.</p></div>
+              <div id="form-errors" class="error-box" role="alert" hidden></div>
+              <button id="calibrate-button" class="button primary" type="submit" disabled>Calibrate determinations <span aria-hidden="true">→</span></button>
+              <p class="boundary-note">Calculated by <strong>chronologer</strong></p>
+            </form>
+          </section>
+          <div class="visualizations">
+            <section class="panel results-panel" aria-labelledby="results-heading">
+              <div class="panel-heading"><div><h2 id="results-heading">Calibrated determinations</h2><p id="result-subtitle" class="help">Calendar-time distributions</p></div><span id="result-count" class="tag" hidden></span></div>
+              <div id="results-status" class="status-line" role="status" aria-live="polite"></div>
+              <div class="result-views">
+                <nav class="result-tabs" role="tablist" aria-label="Determination views">
+                  <button id="individual-view-tab" role="tab" aria-controls="individual-view-panel" aria-selected="true" tabindex="0">Individual plots</button>
+                  <button id="stacked-view-tab" role="tab" aria-controls="stacked-view-panel" aria-selected="false" tabindex="-1">Stacked plot</button>
+                </nav>
+                <section id="individual-view-panel" role="tabpanel" aria-labelledby="individual-view-tab">
+                  <div id="results-empty" class="empty-state"><svg viewBox="0 0 100 48" aria-hidden="true"><path class="empty-axis" d="M4 40H96M8 6V40"/><path d="M9 39C24 39 22 12 34 12S43 36 52 36 59 23 67 23 72 39 94 39"/></svg><h3>A calendar view of your dates</h3><p>Enter a determination, choose a curve, and calibrate.<br>Each sample will appear in its own plot.</p></div>
+                  <div id="result-plots" class="result-plots" role="region" aria-label="Scrollable individual determination plots" tabindex="0"></div>
+                </section>
+                <section id="stacked-view-panel" role="tabpanel" aria-labelledby="stacked-view-tab" hidden>
+                  <p id="stacked-empty" class="compact-empty">Calibrate your determinations to compare their shapes in one plot.</p>
+                  <div id="stacked-plot"></div>
+                </section>
+              </div>
+              <div class="plot-footer"><span>Calendar age · cal BP (before AD 1950)</span><span>Older ← → Younger</span></div>
+            </section>
+            <section class="panel curve-panel" aria-labelledby="curve-heading">
+              <div class="panel-heading"><div><h2 id="curve-heading">Calibration curve</h2><p id="curve-subtitle" class="help">Calendar age and radiocarbon age</p></div><span class="legend"><i></i>Curve mean <i class="ribbon"></i>±1σ</span></div>
+              <div id="curve-status" class="compact-empty" role="status">The selected curve will appear here.</div><div id="curve-plot"></div>
+            </section>
+          </div>
+        </div>
+      </section>
+      <section id="summarize-panel" role="tabpanel" aria-labelledby="summarize-tab" hidden>
+        <div class="workspace-heading"><div><h1>Summarize</h1><p>Explore density and mixture models for a collection of events.</p></div><span class="tag">Density benchmark</span></div>
+        <section class="panel phase-workspace">
+          <button id="add-summary" class="button secondary" type="button">+ Summary</button>
+          <p class="help">Fit a single density or Gaussian mixture locally with Chronologer and PyMC. Save the project to keep the latest successful plots for each summary. Raw sampling chains and full text logs are not embedded.</p>
+          <p id="summary-empty" class="compact-empty">Add a summary to begin.</p>
+          <div id="summary-list"></div>
+        </section>
+      </section>
+      <section id="phase-panel" role="tabpanel" aria-labelledby="phase-tab" hidden>
+        <div class="workspace-heading"><div><h1>Phase</h1><p class="phase-gloss"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M5 3h14l-2 7c-1 3-3 4-5 4s-4-1-5-4L5 3Zm7 11v6m-5 1h10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg><strong>Phases are scientific assertions about how events are distributed through time. Choose wisely.</strong></p></div><span class="tag">UI prototype</span></div>
+        <section class="panel phase-workspace">
+          <div class="phase-toolbar"><button id="add-phase" class="button secondary" type="button">+ Phase</button><span class="help">Older is deeper: younger ↑ / older ↓. Drag the grip to reorder; use ↑ / ↓ on a focused grip.</span></div>
+          <p class="help">Order is an assertion, not a fitted chronology. Block height and spacing do not specify durations or gaps. No inference or event membership is applied.</p>
+          <div id="phase-canvas" class="phase-canvas" role="region" aria-label="Vertical phase chronology, older at bottom" tabindex="0">
+            <span class="phase-time-label">Younger ↑</span>
+            <p id="phase-empty" class="compact-empty">Add a phase to begin shaping your chronology.</p>
+            <ol id="phase-list" class="phase-list" aria-label="Phases in chronological order"></ol>
+            <span class="phase-time-label">Older ↓</span>
+          </div>
+          <p id="phase-status" class="help" role="status" aria-live="polite"></p>
+        </section>
+      </section>
+      <section id="depth-panel" role="tabpanel" aria-labelledby="depth-tab" hidden>
+        <div class="workspace-heading"><div><h1>Depth</h1><p>Age–depth modelling.</p></div><span class="tag">Preview</span></div>
+        <section class="panel process-placeholder"><span class="eyebrow">A space for age–depth models</span><h2>Connect depth with time.</h2><p>A future workspace for modelling chronology through sediment cores and stratigraphic sequences.</p><p class="help">Age–depth modelling is not available in this version.</p></section>
+      </section>
+      <section id="process-panel" role="tabpanel" aria-labelledby="process-tab" hidden>
+        <div class="workspace-heading"><div><h1>Process Lab</h1><p>From chronological processes to archaeological observations.</p></div><span class="tag">In development</span></div>
+        <section class="panel process-placeholder"><span class="eyebrow">A space for temporal processes</span><h2>Explore how events unfold over time.</h2><p>A future workspace for shaping event intensities and exploring their realizations, with dating observations connected to the generating process.</p><div class="process-diagram" aria-label="Conceptual hierarchy"><span>Chronological process</span><span aria-hidden="true">↓</span><span>Events & contexts</span><span aria-hidden="true">↓</span><span>Dated samples</span><span aria-hidden="true">↓</span><span>Dating observations</span></div><p class="help">Process modelling is not available in this version.</p><button class="button secondary" id="back-to-calibrate">Return to Calibrate</button></section>
+      </section>
+    </main>
+    <footer class="app-footer"><span>Chronologer</span><span>Scientific engine + independent application interface</span></footer>
+    <script type="module" src="js/app.js?v=theme-icons-1"></script>
+    <input id="csv-file" type="file" accept=".csv,text/csv" hidden>
+    <input id="project-file" type="file" accept=".chrono,application/zip" hidden>
+  </body>
+</html>

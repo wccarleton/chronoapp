@@ -1,0 +1,28 @@
+{
+  "jspdf": {
+    "version": "4.2.1",
+    "source": "https://registry.npmjs.org/jspdf/-/jspdf-4.2.1.tgz",
+    "archive_integrity": "sha512-YyAXyvnmjTbR4bHQRLzex3CuINCDlQnBqoSYyjJwTP2x9jDLuKDzy7aKUl0hgx3uhcl7xzg32agn5vlie6HIlQ==",
+    "file": "jspdf.umd.min.js",
+    "sha256": "e6551fcdc32f09d6853b2c5126d18d01d9447e0da618a41a11ebeee0f6c20d54"
+  },
+  "svg2pdf.js": {
+    "version": "2.8.1",
+    "source": "https://registry.npmjs.org/svg2pdf.js/-/svg2pdf.js-2.8.1.tgz",
+    "archive_integrity": "sha512-AzXfPHjHnFt9dpdRPhWWBOKipnMSWQZRKiV3FTTPdY6wwRgT3labbA4s0HIQaskNhwAhrcI2u2rDhD8j8udfNQ==",
+    "file": "svg2pdf.umd.min.js",
+    "sha256": "2f10c0d16959e9a0c4cfd8605cfce0830ddc384337f74fa0351a6eff1c1efb8b"
+  },
+  "DejaVuSans.ttf": {
+    "source": "Matplotlib 3.11.2 / DejaVu fonts",
+    "sha256": "3fdf69cabf06049ea70a00b5919340e2ce1e6d02b0cc3c4b44fb6801bd1e0d22"
+  },
+  "DejaVuSans-Bold.ttf": {
+    "source": "Matplotlib 3.11.2 / DejaVu fonts",
+    "sha256": "b184b89e3c1075f22f6b71575b6fc20d4972b3cfd3b23322ca6fd596dcaef167"
+  },
+  "LICENSE_DEJAVU": {
+    "source": "Matplotlib 3.11.2 / DejaVu fonts",
+    "sha256": "d75938dec098f06f0ac3c00853065d94f020be1c3c62ef1dc2975ba15b4d9b0e"
+  }
+}
