@@ -5,7 +5,9 @@
 The existing common-bound truncated-normal radiocarbon hierarchy from
 Chronologer's `tests/test_pymc_models.py` is now exposed by
 `chronologer.build_radiocarbon_density(...)` and
-`chronologer.fit_radiocarbon_density(...)`. There was no pre-existing callable
+`chronologer.models.density.single(data, params=..., mcmc_config=...)`, a thin
+wrapper around the still-supported `chronologer.fit_radiocarbon_density(...)`.
+There was no pre-existing callable
 density-fit API: the model lived in tests/notebooks. This small engine module
 packages the tested structure rather than constructing a model in ChronoApp.
 A regression compares its logp and gradient numerically with the existing test
@@ -86,11 +88,16 @@ App metadata now explicitly requires Python >=3.12 and PyMC >=6.3.2,<7, with
 PyTensor's compatible constraint supplied by PyMC (>=3.2.2,<3.4 here).
 Reinstalled editable app metadata without changing the installed scientific stack.
 
-Application sampling defaults are centralized in `api/density.py:SAMPLING`:
-250 draws, 250 tuning steps, 2 chains, seed 912. The engine uses 1 core,
+Application sampling defaults are shared by both Summary models via
+`sampling.py` and `frontend/js/sampling-settings.js`: 1,000 retained draws,
+1,000 tuning steps per chain, 4 chains, seed 912. The three counts are user-editable
+under MCMC sampling and saved with each run. The engine uses 1 core,
 ordinary PyMC NUTS and `adapt_diag`, with progress display and automatic
-convergence checks disabled. These are development execution defaults, not
-scientifically validated sampling recommendations. UI and exports say so.
+convergence checks disabled; the app generates its diagnostic report after fitting.
+Defaults are starting values, not a convergence guarantee. Scientific model
+definitions and standalone engine defaults are unchanged.
+The historical benchmark below explicitly used 250 draws, 250 tuning steps,
+and 2 chains; browser benchmark scripts retain those explicit settings.
 
 Actual Windows browser benchmark: CSV ages 2500, 2550, 2600 BP, errors 30 years,
 IntCal20; calendar bounds 3500–1500 BP and the displayed default prior settings.

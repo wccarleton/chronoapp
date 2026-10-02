@@ -11,9 +11,11 @@ from importlib.metadata import version
 
 from chronologer.calcurves import DEFAULT_CURVES
 from .saved_results import validate_saved_run
+from .sampling import validate_saved_sampling
 
-MAX_BYTES = 5 * 1024 * 1024
-MAX_EVENTS = 100
+MAX_BYTES = 64 * 1024 * 1024
+MAX_CSV_BYTES = 16 * 1024 * 1024
+MAX_EVENTS = 10000
 
 
 def new_project():
@@ -118,6 +120,9 @@ def validate_project(project):
             raise ValueError("Summary model must be density or mixture.")
         if not isinstance(summary["parameters"], dict):
             raise ValueError("Summary parameters must be a JSON object.")
+        validate_saved_sampling(summary['parameters'])
+        if not isinstance(summary["events"], list) or len(summary["events"]) > 100:
+            raise ValueError("A Summary analysis currently supports at most 100 events; the project database supports 10,000.")
         # Reuse the event validator for independent input snapshots.
         validate_project({"metadata": meta, "events": summary["events"], "source_csv": None})
         if "saved_run" in summary:
@@ -135,13 +140,13 @@ def validate_project(project):
     except (ValueError, TypeError, RecursionError):
         raise ValueError("Project contains invalid JSON values.") from None
     if len(encoded) > MAX_BYTES:
-        raise ValueError("Project exceeds the 5 MiB limit.")
+        raise ValueError("Project exceeds the 64 MiB limit. Remove unused saved Summary results.")
     return project
 
 
 def import_csv(content: bytes, filename: str, default_curve: str | None = None):
-    if len(content) > MAX_BYTES:
-        raise ValueError("CSV exceeds the 5 MiB limit.")
+    if len(content) > MAX_CSV_BYTES:
+        raise ValueError("CSV exceeds the 16 MiB limit.")
     try:
         text = content.decode("utf-8")
     except UnicodeDecodeError:
@@ -214,7 +219,7 @@ def dump_project(project) -> bytes:
 
 def load_project(content: bytes):
     if len(content) > MAX_BYTES:
-        raise ValueError("Project exceeds the 5 MiB limit.")
+        raise ValueError("Project exceeds the 64 MiB limit.")
     try:
         with zipfile.ZipFile(io.BytesIO(content)) as archive:
             infos = archive.infolist()
@@ -223,7 +228,7 @@ def load_project(content: bytes):
             allowed = required | {"data/source.csv", "data/source.json", "data/phases.json", "data/summaries.json"}
             if (len(names) != len(set(names)) or not required <= set(names)
                     or set(names) - allowed or sum(item.file_size for item in infos) > MAX_BYTES):
-                raise ValueError("Invalid project archive entries or expanded size exceeds 5 MiB.")
+                raise ValueError("Invalid project archive entries or expanded size exceeds 64 MiB.")
             if ("data/source.csv" in names) != ("data/source.json" in names):
                 raise ValueError("Incomplete CSV provenance in project archive.")
             def read_json(name):

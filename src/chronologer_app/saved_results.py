@@ -1,6 +1,7 @@
 """Validation for plot-ready saved runs; no executable models or chain matrices."""
 import math
 from datetime import datetime
+from .sampling import validate_saved_sampling
 
 
 def validate_saved_run(run):
@@ -34,7 +35,7 @@ def validate_saved_run(run):
     require(all(isinstance(e, dict) for e in run['events']), 'event records')
     r = run['result']
     fields = {'model', 'coordinate_system', 'density', 'marginals', 'posterior', 'sampling', 'divergences', 'warnings', 'elapsed_seconds'}
-    require(isinstance(r, dict) and fields <= set(r) and not set(r) - fields - {'diagnostics'}, 'result fields (raw samples are not supported)')
+    require(isinstance(r, dict) and fields <= set(r) and not set(r) - fields - {'diagnostics', 'mcmc'}, 'result fields (raw samples are not supported)')
     require(r['model'] == ('gaussian_mixture' if run['model'] == 'mixture' else 'truncated_normal_hierarchy') and r['coordinate_system'] == 'negative_bp', 'model/coordinates')
     arrays(r['density'], band=True, strict=True)
     require(set(r['density']) == {'t_values', 'pdf_values', 'lower_values', 'upper_values'}, 'density fields')
@@ -44,6 +45,7 @@ def validate_saved_run(run):
     sampling = r['sampling']
     require(isinstance(sampling, dict) and set(sampling) == {'draws', 'tune', 'chains', 'random_seed'}, 'sampling metadata')
     require(all(type(v) is int for v in sampling.values()) and sampling['draws'] > 0 and sampling['tune'] >= 0 and sampling['chains'] > 0, 'sampling values')
+    validate_saved_sampling(run['parameters'], r)
     posterior = r['posterior']
     require(isinstance(posterior, dict) and set(posterior) == {'type', 'variables', 'sizes'}, 'posterior metadata only')
     require(posterior['type'] == 'xarray.DataTree' and isinstance(posterior['variables'], list)
@@ -74,3 +76,46 @@ def validate_saved_run(run):
         require(isinstance(diagnostics['priors'], dict) and all(number(v) for v in diagnostics['priors'].values()), 'priors')
     else:
         require(not diagnostics, 'unexpected diagnostics')
+    if 'mcmc' in r:
+        validate_mcmc(r['mcmc'], sampling['chains'])
+
+
+def validate_mcmc(mcmc, chains):
+    """Bounded, data-only reports. SVGs are displayed as images, never HTML."""
+    import base64
+    import binascii
+    import re
+    def require(condition):
+        if not condition:
+            raise ValueError('Invalid saved Summary result: MCMC diagnostics')
+    def scalar(v):
+        return v is None or (type(v) in (float, int) and math.isfinite(v))
+    require(isinstance(mcmc, dict) and set(mcmc) == {'version', 'variables', 'chains', 'notes', 'versions', 'artifacts'} and mcmc['version'] == 1)
+    require(isinstance(mcmc['variables'], list) and 1 <= len(mcmc['variables']) <= 1000)
+    metrics = {'r_hat', 'ess_bulk', 'ess_tail', 'mcse_mean', 'mcse_sd'}
+    for row in mcmc['variables']:
+        require(isinstance(row, dict) and set(row) == metrics | {'variable', 'geweke_z'})
+        require(isinstance(row['variable'], str) and len(row['variable']) <= 500)
+        require(all(scalar(row[k]) and (row[k] is None or row[k] >= 0) for k in metrics))
+        require(isinstance(row['geweke_z'], list) and len(row['geweke_z']) == chains and all(scalar(v) for v in row['geweke_z']))
+    require(isinstance(mcmc['chains'], list) and len(mcmc['chains']) == chains)
+    for i, row in enumerate(mcmc['chains']):
+        require(isinstance(row, dict) and set(row) == {'chain', 'divergences', 'bfmi', 'max_tree_depth', 'reached_max_treedepth', 'acceptance_mean'})
+        require(row['chain'] == i + 1 and all(scalar(v) and (v is None or v >= 0) for v in row.values()))
+    require(isinstance(mcmc['notes'], list) and len(mcmc['notes']) <= 100 and all(isinstance(v, str) and len(v) <= 4000 for v in mcmc['notes']))
+    require(isinstance(mcmc['versions'], dict) and len(mcmc['versions']) <= 20 and all(isinstance(k, str) and isinstance(v, str) and len(k + v) <= 200 for k, v in mcmc['versions'].items()))
+    require(isinstance(mcmc['artifacts'], list) and len(mcmc['artifacts']) <= 260)
+    names = set()
+    types = {'diagnostics.json': 'application/json', 'diagnostics.csv': 'text/csv',
+             'trace-plots.pdf': 'application/pdf', 'messages.txt': 'text/plain'}
+    for item in mcmc['artifacts']:
+        require(isinstance(item, dict) and set(item) == {'name', 'mime', 'data'})
+        name = item['name']
+        require(isinstance(name, str) and name not in names)
+        names.add(name)
+        expected = 'image/svg+xml' if re.fullmatch(r'trace-\d{3}\.svg', name) else types.get(name)
+        require(expected is not None and item['mime'] == expected and isinstance(item['data'], str) and len(item['data']) <= 32 * 1024 * 1024)
+        try:
+            base64.b64decode(item['data'], validate=True)
+        except (ValueError, binascii.Error):
+            require(False)

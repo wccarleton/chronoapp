@@ -1093,3 +1093,19 @@ main {
 @media (max-width: 600px) {
   .summary-parameter-plots { grid-template-columns: 1fr; }
 }
+/* Saved MCMC reports: bounded tables and one vector trace page at a time. */
+.mcmc-diagnostics { margin-top: 1rem; }
+.mcmc-diagnostics > summary { cursor: pointer; font-weight: 600; padding: .6rem 0; }
+.mcmc-table-scroll { max-height: 22rem; overflow: auto; margin: .8rem 0; }
+.mcmc-table-scroll table { border-collapse: collapse; width: 100%; font-size: .85rem; white-space: nowrap; }
+.mcmc-table-scroll th, .mcmc-table-scroll td { padding: .45rem .65rem; text-align: right; border-bottom: 1px solid #74858a44; }
+.mcmc-table-scroll th:first-child, .mcmc-table-scroll td:first-child { text-align: left; }
+.mcmc-downloads { display: flex; flex-wrap: wrap; gap: .6rem 1rem; max-height: 9rem; overflow: auto; margin: 1rem 0; }
+.mcmc-downloads a { color: var(--accent); }
+.mcmc-trace-image { display: block; width: 100%; height: auto; margin-top: .8rem; background: white; border-radius: .35rem; }
+.event-pagination { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; margin: .7rem 0; font-size: .85rem; }
+.event-pagination[hidden] { display: none; }
+.event-pagination label { display: inline-flex; gap: .4rem; align-items: center; }
+.event-pagination input { width: 5rem; }
+.sampling-settings { margin: 1rem 0; }
+.sampling-settings > summary { cursor: pointer; font-weight: 600; }

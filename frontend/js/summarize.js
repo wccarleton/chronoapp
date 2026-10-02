@@ -1,6 +1,9 @@
 import { projectState as state } from "./project-state.js";
 import { runDensity } from "./jobs.js?v=job-monitor-2";
 import { createSummaryPlot } from "./plots.js";
+import { createMcmcDiagnostics } from "./mcmc-diagnostics.js";
+import { pagination, PAGE_SIZE } from "./pagination.js";
+import { DEFAULT_SAMPLING, samplingFor, samplingError, samplingControls } from "./sampling-settings.js";
 
 // Latest plot-ready result persists per summary; raw chains are never serialized.
 const models = { density: "Density", mixture: "Mixture" };
@@ -13,7 +16,7 @@ const defaults = { older: 5000, younger: 1, mean: 2500, mean_sd: 500, sd_scale: 
 const settingsFor = summary => summary.model === "mixture"
   ? { K_max: summary.parameters.K_max === undefined ? 5 : summary.parameters.K_max }
   : Object.fromEntries(Object.entries(defaults).map(([key, value]) => [key, summary.parameters[key] === undefined ? value : summary.parameters[key]]));
-const signature = summary => JSON.stringify([summary.model, summary.events, settingsFor(summary)]);
+const signature = summary => JSON.stringify([summary.model, summary.events, settingsFor(summary), samplingFor(summary)]);
 function node(tag, text, className) {
   const element = document.createElement(tag);
   if (text !== undefined) element.textContent = text;
@@ -100,17 +103,23 @@ export function initSummarize() {
       const choices = node("div", undefined, "summary-choices");
       const chosen = new Set();
       const events = state.data.events;
-      const rows = events.map((event, index) => {
-        const label = node("label");
-        const check = node("input"); check.type = "checkbox";
-        check.addEventListener("change", () => { check.checked ? chosen.add(index) : chosen.delete(index); });
-        label.append(check, node("span", describe(event))); choices.append(label);
-        return label;
-      });
-      if (!events.length) choices.append(node("p", "No project events yet. Load a CSV in Project first.", "help"));
-      search.addEventListener("input", () => rows.forEach(row => {
-        row.hidden = !row.textContent.toLowerCase().includes(search.value.toLowerCase());
-      }));
+      picker.append(choices);
+      const pickerPager = pagination(choices, renderChoices, 'Summary event picker');
+      const searchable = events.map((event, index) => ({ index, text: describe(event) }));
+      function renderChoices() {
+        choices.replaceChildren();
+        const matches = searchable.filter(row => row.text.toLowerCase().includes(search.value.toLowerCase()));
+        const start = pickerPager.update(matches.length);
+        matches.slice(start, start + PAGE_SIZE).forEach(({ index, text }) => {
+          const label = node('label'), check = node('input'); check.type = 'checkbox';
+          check.checked = chosen.has(index);
+          check.addEventListener('change', () => { check.checked ? chosen.add(index) : chosen.delete(index); });
+          label.append(check, node('span', text)); choices.append(label);
+        });
+        if (!matches.length) choices.append(node('p', events.length ? 'No matching events.' : 'No project events yet. Load a CSV in Project first.', 'help'));
+      }
+      renderChoices();
+      search.addEventListener('input', renderChoices);
       const status = node("p", "", "help"); status.setAttribute("role", "status");
       const addAll = button("Add all", () => {
         // Match saved copies once each, preserving distinct duplicate project rows.
@@ -131,7 +140,7 @@ export function initSummarize() {
       });
       removeAll.disabled = !summary.events.length;
       removeAll.setAttribute("aria-label", "Remove all events from this summary");
-      picker.append(choices, button("Add selected", () => {
+      picker.append(button("Add selected", () => {
         if (!chosen.size) { status.textContent = "Select at least one event."; return; }
         if (summary.events.length + chosen.size > 100) { status.textContent = "Each summary supports up to 100 events."; return; }
         update(summary.id, { events: [...summary.events, ...[...chosen].sort((a, b) => a - b).map(i => events[i])] }); render();
@@ -148,7 +157,7 @@ export function initSummarize() {
           input.value = settingsFor(summary)[key] ?? "";
           input.addEventListener("input", () => {
             const current = specs().find(s => s.id === summary.id);
-            update(summary.id, { parameters: { ...settingsFor(current), [key]: input.value === "" ? null : Number(input.value) } });
+            update(summary.id, { parameters: { ...current.parameters, ...settingsFor(current), [key]: input.value === "" ? null : Number(input.value) } });
           });
           label.append(input); fitSettings.append(label);
         }
@@ -156,9 +165,12 @@ export function initSummarize() {
         const label = node("label", "Maximum modes"), input = node("input");
         input.type = "number"; input.min = "1"; input.max = "20"; input.step = "1";
         input.dataset.setting = "K_max"; input.value = settingsFor(summary).K_max;
-        input.addEventListener("input", () => update(summary.id, { parameters: { K_max: input.value === "" ? null : Number(input.value) } }));
+        input.addEventListener("input", () => {
+          const current = specs().find(s => s.id === summary.id);
+          update(summary.id, { parameters: { ...current.parameters, K_max: input.value === "" ? null : Number(input.value) } });
+        });
         label.append(input); fitSettings.append(label);
-        fitSettings.append(node("p", "Normal, uniform, or radiocarbon measurements in BP1950. Radiocarbon events currently share one curve. Fixed sparse-weight and scale hyperpriors use a time scale derived from the input measurements. Short development run; inspect diagnostics before interpretation.", "help"));
+        fitSettings.append(node("p", "Normal, uniform, or radiocarbon measurements in BP1950. Each radiocarbon event uses its selected curve. Fixed sparse-weight and scale hyperpriors use a time scale derived from the input measurements. Inspect diagnostics before interpretation.", "help"));
       }
       const fitStatus = node("p", running.has(summary.id) ? "Inference submitted. Progress, cancellation and messages are above the tabs; you can keep working elsewhere." : failures.get(summary.id) ?? "", "summary-fit-status help");
       fitStatus.setAttribute("role", "status");
@@ -166,6 +178,9 @@ export function initSummarize() {
         const current = specs().find(s => s.id === summary.id);
         if (running.has(summary.id) || !current) return;
         const settings = settingsFor(current);
+        const sampling = samplingFor(current);
+        const error = samplingError(sampling);
+        if (error) { fitStatus.textContent = error; return; }
         const mixture = current.model === "mixture";
         if (mixture && (!Number.isInteger(settings.K_max) || settings.K_max < 1 || settings.K_max > 20)) {
           fitStatus.textContent = "Maximum modes must be an integer from 1 to 20."; return;
@@ -181,7 +196,8 @@ export function initSummarize() {
           fitStatus.textContent = "Enter finite prior settings with positive scales and Older greater than Younger."; return;
         }
         // Record the exact visible settings used, including starting suggestions.
-        update(current.id, { parameters: settings });
+        const parameters = { ...settings, sampling };
+        update(current.id, { parameters });
         const token = { id: current.id, generation, signature: signature(current) };
         running.set(current.id, token); results.delete(current.id); failures.delete(current.id); render();
         try {
@@ -190,12 +206,12 @@ export function initSummarize() {
           })) } : { settings, determinations: current.events.map(e => ({
             id: e.id, age: e.parameters.c14_mean, error: e.parameters.c14_err, curve: e.parameters.curve,
           })) };
-          const result = await runDensity(payload, `${state.data.metadata.project_name} / ${current.label}`);
+          const result = await runDensity({ ...payload, sampling }, `${state.data.metadata.project_name} / ${current.label}`);
           const latest = specs().find(s => s.id === token.id);
           if (generation === token.generation && latest && signature(latest) === token.signature) {
             results.set(token.id, { signature: token.signature, result });
             const saved_run = { id: crypto.randomUUID(), created_at: new Date().toISOString(),
-              model: latest.model, events: structuredClone(latest.events), parameters: settings,
+              model: latest.model, events: structuredClone(latest.events), parameters,
               result };
             commit(specs().map(s => s.id === token.id ? { ...s, saved_run } : s));
           }
@@ -205,7 +221,10 @@ export function initSummarize() {
       });
       run.classList.add("summary-fit");
       run.disabled = running.has(summary.id);
-      card.append(fitSettings, run, fitStatus);
+      card.append(fitSettings, samplingControls(samplingFor(summary), sampling => {
+        const current = specs().find(s => s.id === summary.id);
+        update(summary.id, { parameters: { ...current.parameters, sampling } });
+      }), run, fitStatus);
       if (summary.saved_run) {
         const saved = summary.saved_run;
         const tools = node("div", undefined, "summary-saved-run");
@@ -240,7 +259,9 @@ export function initSummarize() {
         try {
           const result = fitted.result;
           resultContainer.append(node("p", `Completed in ${result.elapsed_seconds.toFixed(1)} s · ${result.sampling.chains} chains × ${result.sampling.draws} draws (${result.sampling.tune} tuning per chain). ${result.warnings.join(" ")}`, "help"));
-          plots.set(summary.id, createSummaryPlot(resultContainer, result, summary.label));
+          const plot = createSummaryPlot(resultContainer, result, summary.label);
+          const mcmc = createMcmcDiagnostics(resultContainer, result.mcmc);
+          plots.set(summary.id, { dispose() { plot.dispose(); mcmc.dispose(); } });
           if (result.model === "gaussian_mixture") {
             const diagnostics = node("details", undefined, "mixture-diagnostics");
             diagnostics.append(node("summary", "Mixture diagnostics"));
@@ -263,7 +284,7 @@ export function initSummarize() {
   add.addEventListener("click", () => {
     if (!state.data || state.busy || specs().length >= 100) return;
     commit([...specs(), { id: `summary-${crypto.randomUUID()}`, label: `Summary ${specs().length + 1}`,
-      model: "density", events: [], parameters: {} }]);
+      model: "density", events: [], parameters: { sampling: { ...DEFAULT_SAMPLING } } }]);
     render(); list.lastElementChild.querySelector("input").focus();
   });
   render();

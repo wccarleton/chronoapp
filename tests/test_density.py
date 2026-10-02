@@ -15,9 +15,9 @@ def payload():
 
 def test_density_api_executes_public_engine_in_spawned_worker(monkeypatch, tmp_path):
     monkeypatch.setenv('CHRONOAPP_LOG_DIR', str(tmp_path))
-    monkeypatch.setattr(density, 'SAMPLING', dict(draws=8, tune=8, chains=1, random_seed=912))
+    sampling = dict(draws=8, tune=8, chains=1)
     with TestClient(app) as client:
-        response = client.post('/api/density/jobs', json={**payload(), 'label': 'Test fit'})
+        response = client.post('/api/density/jobs', json={**payload(), 'label': 'Test fit', 'sampling': sampling})
         assert response.status_code == 202, response.text
         job = response.json()
         deadline = time.monotonic() + 120
@@ -37,10 +37,14 @@ def test_density_api_executes_public_engine_in_spawned_worker(monkeypatch, tmp_p
     assert result['posterior']['type'] == 'xarray.DataTree'
     assert {'tau', 'r_latent', 'tau_mu', 'tau_sd'} <= set(result['posterior']['variables'])
     assert result['posterior']['sizes']['draw'] == 8
+    assert result['sampling'] == {**sampling, 'random_seed': 912}
     assert result['coordinate_system'] == 'negative_bp'
     assert all(len(a) == 512 and np.isfinite(a).all() for a in result['density'].values())
     assert np.all(np.array(result['density']['lower_values']) <= result['density']['upper_values'])
     assert result['warnings'] and result['elapsed_seconds'] > 0
+    assert result['mcmc']['variables']
+    assert any(a['name'] == 'messages.txt' for a in result['mcmc']['artifacts'])
+    assert all(row['r_hat'] is None for row in result['mcmc']['variables'])
     marginals = result['marginals']
     assert [p['name'] for p in marginals['parameters']] == ['tau_mu', 'tau_sd']
     assert [e['id'] for e in marginals['events']] == ['A', 'B']

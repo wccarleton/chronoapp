@@ -78,8 +78,9 @@ still uses conventional radiocarbon BP and calendar BP1950. Other input-model
 evaluators and BCAD conversions are outside this change.
 
 Unknown project versions, malformed archives, extra/duplicate archive entries,
-invalid event fields, and oversized input are rejected. Limits are 100 events
-and 5 MiB for a request/document or the archive's expanded contents. Archives
+invalid event fields, and oversized input are rejected. Limits are 10,000 project events
+and 64 MiB for a project request/document or the archive's expanded contents;
+CSV import is limited to 16 MiB. Archives
 are read in memory, never extracted. Only JSON and CSV are used: no pickle,
 executable model objects, compiler caches, or application-installation writes.
 
@@ -221,7 +222,9 @@ each plot/export to its matching curve.
 
 Summary uses saved copies from shared project state, rather than Calibration's
 DOM or derived plot arrays. Gaussian mixture inference accepts BP1950 normal,
-uniform, and radiocarbon events; radiocarbon inputs currently share one curve.
+uniform, and radiocarbon events; each radiocarbon input uses its selected installed
+curve through the distribution's spline references. The single-density API still
+requires one shared curve.
 Other distributions remain preserved in projects but cannot yet be fitted.
 Arbitrary curves and calibration-curve mixtures are not implemented.
 
@@ -239,25 +242,42 @@ the same parameters object and runs the engine's Gaussian mixture API.
 Density `parameters` hold explicit conventional-cal-BP `older`, `younger`, and
 `mean` values, plus `mean_sd` and `sd_scale` in years. Empty parameters show editable
 starting suggestions; fitting records those visible settings before submitting.
+Both models store sampling controls in `parameters.sampling` as
+`{"draws":1000,"tune":1000,"chains":4}` by default for new summaries. The run
+snapshot records the same object and its result records the effective counts
+plus the existing fixed seed. Saved run counts must match result metadata.
+Editing counts hides stale results; Load saved run restores the recorded counts.
+Older saved runs without this nested object use `result.sampling`; unsampled
+legacy drafts use the new defaults. Null fields may be saved in unfinished drafts,
+but execution requires integer counts (positive draws/chains, nonnegative tuning).
 Each summary may also have `saved_run` with `id`, `created_at`, `model`, `events`,
 `parameters`, and `result`. One latest successful run is retained per summary;
 successful refits replace it. `result` is the existing plot response: density and
 credible-band arrays, marginal histograms, warnings, diagnostics, timing, sampling
-settings, and posterior structure metadata only. No raw chains, executable model,
-or full text logs are included. These arrays suffice to restore and export plots;
-they cannot support new chain diagnostics or arbitrary posterior calculations.
+settings, and posterior structure metadata. New results also have optional `mcmc`
+reports: schema version 1, scalar-variable metrics, per-chain sampler metrics,
+method notes, package versions, and artifacts (`name`, `mime`, base64 `data`).
+Artifacts include CSV/JSON diagnostics, paginated SVG traces with per-chain
+histograms, a multipage vector PDF, and `messages.txt` captured before worker exit.
+They are embedded in the saved result and compressed with the project archive;
+no temporary paths or machine-local file references are needed on save/open.
+No raw numerical chains or executable models are included. Reports preserve the
+diagnostics calculated at fit time, not arbitrary future posterior calculations.
+SVG previews use isolated image elements; saved markup is never inserted as HTML.
+Old results without `mcmc` remain valid and show an explicit unavailable message.
 
 Matching results load automatically when opening a project. Editing inputs hides
 stale plots but retains the run; **Load saved run** restores its input snapshot
 after confirmation. **Remove saved result** deletes its plot arrays from project
 state; save again to persist deletion. New results mark the project dirty. Saving
 while inference is running captures only the current retained result, so save
-again after completion. The existing 5 MiB expanded-project limit still applies;
+again after completion. The 64 MiB expanded-project limit applies;
 the UI shows each result's uncompressed size. Archives use compact JSON arrays.
 
-Logs remain in `%LOCALAPPDATA%\\ChronoApp\\logs` (or `CHRONOAPP_LOG_DIR`), outside
-the project. They persist after closing, but the server's in-memory job index
-does not survive restart. Use Download log to keep a portable copy. The server
+Original logs remain in `%LOCALAPPDATA%\\ChronoApp\\logs` (or `CHRONOAPP_LOG_DIR`).
+They persist after closing, but the server's in-memory job index
+does not survive restart. New saved runs also contain a portable messages snapshot.
+The server
 retains only bounded recent plot responses in memory; raw PyMC objects live only
 in the worker and disappear when it exits. Existing unsaved session-only results
 are not automatically migrated into saved runs.

@@ -1,5 +1,6 @@
 import { projectState as state } from "./project-state.js";
 import { getCurves } from "./api.js";
+import { pagination, MAX_EVENTS, PAGE_SIZE } from "./pagination.js";
 
 // UI parameter slots retain their original names in project data. These choices
 // describe event inputs only; they do not introduce new inference models.
@@ -26,6 +27,7 @@ export function fillCurveChoices(select, catalog, value) {
 export function initEventTable() {
   const rows = document.getElementById("project-events");
   const add = document.getElementById("add-event");
+  const pager = pagination(rows.closest('.table-scroll'), render, 'Project events');
   let catalog = [], ownChange = false, previousEvents = "";
   function change(action) {
     ownChange = true;
@@ -36,8 +38,10 @@ export function initEventTable() {
     previousEvents = JSON.stringify(state.data?.events);
     rows.replaceChildren();
     const events = state.data?.events ?? [];
-    add.disabled = !state.data || events.length >= 100;
-    events.forEach((event, index) => {
+    add.disabled = !state.data || events.length >= MAX_EVENTS;
+    const start = pager.update(events.length);
+    events.slice(start, start + PAGE_SIZE).forEach((event, offset) => {
+      const index = start + offset;
       const row = document.createElement("tr"); row.dataset.eventIndex = index;
       function cell() { const td = document.createElement("td"); row.append(td); return td; }
       function input(field, value, update, type = "text") {
@@ -117,11 +121,12 @@ export function initEventTable() {
     });
   }
   add.addEventListener("click", () => {
-    if (!state.data || state.busy || state.data.events.length >= 100) return;
+    if (!state.data || state.busy || state.data.events.length >= MAX_EVENTS) return;
     change(() => state.setEvents([...state.data.events, {
       id: `Event ${state.data.events.length + 1}`, label: "", datum: "BP1950", distribution: "calrcarbon",
       parameters: { ...families.calrcarbon.parameters, curve: state.defaultCurve || catalog.find(item => item.available)?.id || "intcal20" },
     }]));
+    pager.last(state.data.events.length);
     render(); rows.lastElementChild.querySelector("input").focus();
   });
   state.addEventListener("change", () => {

@@ -97,18 +97,48 @@ source changes. The `chronologer-app` command is available after installation.
 ## Plot navigation
 
 The **Summarize** tab can fit the tested single truncated-normal radiocarbon
-hierarchy through `chronologer.fit_radiocarbon_density`. Add project events,
+hierarchy through `chronologer.models.density.single`. Mixtures call
+`chronologer.models.density.gmixture` directly. Both pass scientific `params`
+separately from `mcmc_config`; the app does not use the optional `chronologer.fit`
+delegator. This API organization leaves the models and result structures unchanged.
+Add project events,
 choose Density, review the calendar bounds and prior settings, and select
 **Fit density**. This benchmark requires one shared, locally installed curve.
 It runs ordinary PyMC NUTS in a Windows-compatible worker and displays the
 posterior mean model density and pointwise 95% credible band. The same
-pan/zoom/reset and SVG/PNG/vector-PDF exports are available. Short-run warnings
-are displayed; convergence is not assessed. Save the project to retain the latest
+pan/zoom/reset and SVG/PNG/vector-PDF exports are available. Both Summary models
+have an expandable **MCMC sampling** section: retained draws per chain,
+burn-in/tuning per chain, and number of chains. New summaries start at
+1,000 draws + 1,000 tuning iterations per chain, with 4 chains. Only change these
+if you understand MCMC sampling; the controls explain reliability, runtime,
+memory and report-size consequences. Tuning adapts the sampler and is discarded;
+it is not an additional trim of retained draws. Counts must be whole numbers
+(draws/chains positive, tuning nonnegative). One chain cannot provide between-chain
+R-hat. Chains still run sequentially within each worker. Settings persist with the
+summary and each run, and edits invalidate the displayed result. Legacy saved
+runs retain their recorded counts. Seed and other engine settings are unchanged.
+Short-run warnings
+are displayed. Expand **MCMC diagnostics & chain plots** for rank-normalized
+R-hat, bulk/tail ESS, MCSE, Python Geweke Z, divergences, E-BFMI, tree depth,
+acceptance rates and trace/histogram pages for every retained variable.
+Download CSV/JSON reports, vector SVG/PDF plots and the run's messages.
+Geweke uses Bartlett spectral variance, not coda's AR estimator; its method and
+limitations appear in the report. These diagnostics do not certify convergence.
+Save the project to retain the latest
 successful plot-ready result per summary, including its input snapshot, warnings,
 and diagnostics. Reopening restores matching plots without inference. **Load saved
 run** restores a retained run's inputs after edits; **Remove saved result** removes
 its arrays while keeping current settings/events. Successful reruns replace the
-retained result. Raw PyMC chains and full text logs are not embedded.
+retained result. New runs embed their reports, vector plots and worker message
+snapshot in the project, so downloads still work after reopening or server restart.
+Raw numerical PyMC chains are not embedded. Older runs must be rerun to obtain
+diagnostics. Projects support up to 10,000 events and 64 MiB expanded (CSV import
+is limited to 16 MiB). Project and Calibration tables and the Summary picker show
+100 events per page, with all events retained in project state. Calibration
+Include all / Exclude all applies across pages; selected events on other pages
+remain included. Analysis runs still support 100 selected events: rendering all
+calibration plots and generating Bayesian per-event diagnostics have separate
+scaling costs. This does not restrict database import, editing or saving.
 An app-wide monitor above the tabs shows real tuning/sampling progress and
 indeterminate compilation. Up to two isolated fits run concurrently; further
 runs queue. Other workspaces remain usable. Cancel, Messages and Download log
@@ -227,8 +257,8 @@ python -m pytest -q
   initially share calendar and vertical scales, and break at gaps trimmed by the
   engine. Plot controls can subsequently change each view independently.
 - Calibration requests are grouped by each determination's curve. Each group
-  runs in its own fresh Python worker process, isolating the engine's existing
-  global curve interpolation cache without changing engine code. Results retain
+  continues to run in its own fresh Python worker process. Engine distributions
+  now retain their own references to shared, per-curve splines. Results retain
   input order and their curve identity; overlays and exports use that curve.
   Worker startup adds overhead for each distinct curve.
 - The curve catalog is read from the engine registry. Only locally installed

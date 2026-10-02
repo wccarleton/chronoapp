@@ -79,6 +79,8 @@ async def main():
                     [...card.querySelectorAll('button')].find(b=>b.textContent==='Add selected').click()}
                     for(const [key,value] of Object.entries({older:3500,younger:1500,mean:2500,mean_sd:500,sd_scale:400})){
                     let input=document.querySelector(`[data-setting=${key}]`);input.value=value;input.dispatchEvent(new Event('input'))}
+                    for(const [key,value] of Object.entries({draws:250,tune:250,chains:2})){
+                    let input=document.querySelector(`[data-sampling=${key}]`);input.value=value;input.dispatchEvent(new Event('input'))}
                     document.querySelector('.summary-fit').click();""")
                 assert await js("document.querySelector('.summary-card').getAttribute('aria-busy')==='true'")
                 await wait("!document.querySelector('#run-monitor').hidden")

@@ -80,6 +80,8 @@ async def main():
                     let model=card.querySelector('select');model.value='mixture';model.dispatchEvent(new Event('change'));
                     card=document.querySelector('.summary-card');card.querySelector('details').open=true;
                     [...card.querySelectorAll('button')].find(b=>b.textContent==='Add all').click()}
+                    for(const [key,value] of Object.entries({draws:250,tune:250,chains:2})){
+                    let input=document.querySelector(`[data-sampling=${key}]`);input.value=value;input.dispatchEvent(new Event('input'))}
                     document.querySelector('.summary-fit').click();""")
                 assert await js("document.querySelector('.summary-card').getAttribute('aria-busy')==='true'")
                 await wait("!document.querySelector('#run-monitor').hidden")

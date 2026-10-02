@@ -1,7 +1,7 @@
 import { projectState as state } from "./project-state.js";
 import { initEventTable } from "./event-table.js";
 
-const LIMIT = 5 * 1024 * 1024;
+const LIMIT = 64 * 1024 * 1024;
 
 async function request(path, options = {}) {
   const response = await fetch(`/api/projects/${path}`, options);
@@ -13,7 +13,7 @@ async function request(path, options = {}) {
 }
 
 async function bytes(file) {
-  if (file.size > LIMIT) throw new Error("Project or CSV exceeds the 5 MiB limit.");
+  if (file.size > LIMIT) throw new Error("Project exceeds the 64 MiB limit.");
   return file.arrayBuffer();
 }
 

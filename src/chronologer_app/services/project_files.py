@@ -83,7 +83,7 @@ class ProjectFiles:
             with path.open("rb") as stream:
                 content = stream.read(MAX_BYTES + 1)
             if len(content) > MAX_BYTES:
-                raise ValueError("Project exceeds the 5 MiB limit.")
+                raise ValueError("Project exceeds the 64 MiB limit.")
             project = load_project(content)
             file = self._reference(path, hashlib.sha256(content).hexdigest())
             return {"cancelled": False, "project": project, "file": file}

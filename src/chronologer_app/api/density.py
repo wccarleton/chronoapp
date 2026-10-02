@@ -15,11 +15,17 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from .calibration import Determination, require_local_curve
 from ..services.jobs import get_jobs, TERMINAL
 from ..services.posterior_plots import posterior_plots
+from ..services.mcmc_diagnostics import build_diagnostics
+from ..sampling import DEFAULT_SAMPLING, SamplingSettings
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-# Fixed execution-benchmark settings. Do not accept arbitrary sampler options.
-SAMPLING = dict(draws=250, tune=250, chains=2, random_seed=912)
+# Only these counts are editable; seed and all other engine settings are unchanged.
+SAMPLING = dict(**DEFAULT_SAMPLING, random_seed=912)
+
+
+def sampling_for(request):
+    return {**SAMPLING, **(request.sampling.model_dump() if request.sampling is not None else {})}
 Finite = Annotated[float, Field(strict=True, allow_inf_nan=False)]
 Positive = Annotated[float, Field(strict=True, gt=0, allow_inf_nan=False)]
 
@@ -43,6 +49,7 @@ class DensityRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     determinations: list[Determination] = Field(min_length=1, max_length=100)
     settings: DensitySettings
+    sampling: SamplingSettings | None = None
 
 
 def fit_in_worker(request: dict, sampling: dict, progress_callback=None):
@@ -62,20 +69,27 @@ def fit_in_worker(request: dict, sampling: dict, progress_callback=None):
                 observations.append(norm(-p['mean'], p['sd']))
             else:
                 observations.append(uniform(-p['upper'], p['upper'] - p['lower']))
-        result = chronologer.fit_gaussian_mixture(observations, request['K_max'],
-                    progress_callback=progress_callback, **sampling)
+        result = chronologer.models.density.gmixture(
+            observations, params={'K_max': request['K_max']},
+            mcmc_config=sampling, progress_callback=progress_callback)
     else:
         rows, settings = request["determinations"], request["settings"]
         curve = chronologer.load_calcurve(rows[0]["curve"], quiet=True)
-        result = chronologer.fit_radiocarbon_density(
-            [-row["age"] for row in rows], [row["error"] for row in rows], curve,
-            lower=-settings["older"], upper=-settings["younger"],
-            mean_prior=-settings["mean"], mean_prior_sd=settings["mean_sd"],
-            sd_prior_scale=settings["sd_scale"], progress_callback=progress_callback, **sampling)
+        result = chronologer.models.density.single(
+            dict(radiocarbon_ages=[-row['age'] for row in rows],
+                 radiocarbon_errors=[row['error'] for row in rows], calcurve=curve),
+            params=dict(lower=-settings['older'], upper=-settings['younger'],
+                        mean_prior=-settings['mean'], mean_prior_sd=settings['mean_sd'],
+                        sd_prior_scale=settings['sd_scale']),
+            mcmc_config=sampling, progress_callback=progress_callback)
     posterior = result.posterior["posterior"].to_dataset()
     stats = result.posterior["sample_stats"].to_dataset()
     divergences = int(stats["diverging"].values.sum())
-    warnings = ["Development benchmark: convergence has not been assessed; do not treat this short run as a final scientific result."]
+    warnings = ["Inspect MCMC diagnostics before interpreting this fit; sampling counts alone do not establish convergence."]
+    if sampling['chains'] < 2:
+        warnings.append('Only one chain: between-chain R-hat is unavailable.')
+    if sampling['draws'] < 1000 or sampling['tune'] < 1000:
+        warnings.append('Fewer than 1,000 retained draws or tuning iterations per chain: this may be insufficient. Inspect diagnostics.')
     if divergences:
         warnings.append(f"{divergences} divergent transitions: this fit may be unreliable.")
     if "reached_max_treedepth" in stats and stats["reached_max_treedepth"].values.any():
@@ -87,7 +101,12 @@ def fit_in_worker(request: dict, sampling: dict, progress_callback=None):
         diagnostics = dict(priors=result.priors, weight_mean=weights.mean(axis=0).tolist(),
                            weight_below_005=(weights < .05).mean(axis=0).tolist(),
                            weight_interval=np.quantile(weights, [.025, .975], axis=0).tolist())
+    if progress_callback:
+        total = (sampling['draws'] + sampling['tune']) * sampling['chains']
+        progress_callback(dict(stage='Generating MCMC diagnostics', completed=total, total=total))
+    mcmc = build_diagnostics(result.posterior, rows, sampling)
     return {"model": "gaussian_mixture" if mixture else "truncated_normal_hierarchy", "coordinate_system": "negative_bp",
+            "mcmc": mcmc,
             "diagnostics": diagnostics,
             "density": {key: values.tolist() for key, values in result.density.items()},
             "marginals": posterior_plots(posterior, rows),
@@ -129,19 +148,17 @@ class MixtureJobRequest(BaseModel):
     events: list[MixtureEvent] = Field(min_length=1, max_length=100)
     K_max: int = Field(default=5, strict=True, ge=1, le=20)
     label: str = Field(default='Mixture fit', min_length=1, max_length=250)
+    sampling: SamplingSettings | None = None
 
 
 @router.post('/mixture/jobs', status_code=202)
 def start_mixture(request: MixtureJobRequest):
     curves = {e.parameters['curve'] for e in request.events if e.distribution == 'calrcarbon'}
-    # Existing calrcarbon interpolation is cached at class level. Each worker
-    # starts fresh; refuse mixed curves rather than silently using the wrong one.
-    if len(curves) > 1:
-        raise HTTPException(422, 'This mixture workflow currently requires one shared radiocarbon curve.')
+    # Each measurement carries its own curve's shared spline references.
     for curve in curves:
         require_local_curve(curve)
     try:
-        return get_jobs().submit(fit_in_worker, (request.model_dump(), SAMPLING.copy()), request.label)
+        return get_jobs().submit(fit_in_worker, (request.model_dump(), sampling_for(request)), request.label)
     except ValueError as error:
         raise HTTPException(429, str(error)) from None
     except OSError:
@@ -154,7 +171,7 @@ def submit_density(request: DensityRequest, label="Density fit"):
         raise HTTPException(422, "This density benchmark requires one shared calibration curve for all events.")
     require_local_curve(next(iter(curves)))
     try:
-        return get_jobs().submit(fit_in_worker, (request.model_dump(), SAMPLING.copy()), label)
+        return get_jobs().submit(fit_in_worker, (request.model_dump(), sampling_for(request)), label)
     except ValueError as error:
         raise HTTPException(429, str(error)) from None
     except OSError:

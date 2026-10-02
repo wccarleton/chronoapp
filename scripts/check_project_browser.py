@@ -197,6 +197,8 @@ async def main():
                 Path('docs/screenshots/phase-dark.png').write_bytes(base64.b64decode(shot['data']))
                 await js("document.querySelector('#summarize-tab').click();document.querySelector('#add-summary').click();{let card=document.querySelector('.summary-card');let name=card.querySelector('input');name.value='Occupation';name.dispatchEvent(new Event('input'));let model=card.querySelector('select');model.value='mixture';model.dispatchEvent(new Event('change'));card=document.querySelector('.summary-card');card.querySelector('details').open=true;let search=card.querySelector('[type=search]');search.value=state.data.events[0].id;search.dispatchEvent(new Event('input'));let check=card.querySelector('[type=checkbox]');check.click();[...card.querySelectorAll('button')].find(b=>b.textContent==='Add selected').click()}")
                 assert await js("state.data.summaries[0].label==='Occupation' && state.data.summaries[0].model==='mixture' && state.data.summaries[0].events.length===1 && state.dirty")
+                assert await js("document.querySelector('[data-sampling=draws]').value==='1000' && document.querySelector('[data-sampling=tune]').value==='1000' && document.querySelector('[data-sampling=chains]').value==='4'")
+                await js("document.querySelector('.sampling-settings').open=true;for(const [key,value] of Object.entries({draws:40,tune:30,chains:2})){const input=document.querySelector(`[data-sampling=${key}]`);input.value=value;input.dispatchEvent(new Event('input'));}")
                 await js("window.savedSummaries=JSON.stringify(state.data.summaries);document.querySelector('#project-tab').click();document.querySelector('[data-project-action=save]').click()")
                 await wait('!state.busy && !state.dirty')
                 await js("document.querySelector('[data-project-action=new]').click()")
@@ -279,6 +281,15 @@ async def main():
                 assert await js('JSON.stringify(state.data)===beforeBadCopy && !state.dirty')
                 # Previously fitted mixture restores from archive without sampling.
                 fixture = json.loads(Path('docs/mixture-benchmark-result.json').read_text())
+                # Synthetic chains exercise report rendering/portability, not inference.
+                import numpy as np
+                import xarray as xr
+                from chronologer_app.services.mcmc_diagnostics import build_diagnostics
+                rng = np.random.default_rng(32)
+                trace = xr.DataTree.from_dict({
+                    'posterior': xr.Dataset({f'parameter_{i}': (('chain', 'draw'), rng.normal(size=(2, 250))) for i in range(5)}),
+                    'sample_stats': xr.Dataset({'energy': (('chain', 'draw'), rng.normal(size=(2, 250)))})})
+                fixture['mcmc'] = build_diagnostics(trace, [], fixture['sampling'])
                 await js('window.mixtureFixture=' + json.dumps(fixture))
                 await js('window.mixtureCSV=' + json.dumps(Path('docs/examples/density-benchmark.csv').read_text()))
                 await js("""{
@@ -291,13 +302,62 @@ async def main():
                 }""")
                 await wait("document.querySelectorAll('[data-layer=summary-density] [data-event-index]').length===20")
                 assert await js("!document.querySelector('.summary-parameter-plot') && !state.dirty && document.querySelector('.mixture-diagnostics')!==null")
+                assert await js("document.querySelector('[data-sampling=draws]').value==='250' && document.querySelector('[data-sampling=chains]').value==='2'")
+                await js("document.querySelector('.mcmc-diagnostics').open=true")
+                await wait("document.querySelector('.mcmc-trace-image')?.naturalWidth>0")
+                assert await js("document.querySelectorAll('.mcmc-table-scroll tbody tr').length===7 && document.querySelector('.mcmc-diagnostics').textContent.includes('Geweke')")
+                await js("{const select=document.querySelector('[aria-label=\"Chain plot page\"]');select.value='1';select.dispatchEvent(new Event('change'))}")
+                await wait("document.querySelector('.mcmc-trace-image').alt.includes('page 2') && document.querySelector('.mcmc-trace-image').naturalWidth>0")
+                await js("document.querySelector('.mcmc-downloads a[download=\"trace-plots.pdf\"]').click()")
+                for _ in range(100):
+                    if (download_dir / 'trace-plots.pdf').exists(): break
+                    await asyncio.sleep(.1)
+                assert (download_dir / 'trace-plots.pdf').read_bytes().startswith(b'%PDF')
+                assert await js("JSON.stringify(state.data.summaries[0].saved_run.result.mcmc)===JSON.stringify(mixtureFixture.mcmc)")
+                await js("document.querySelector('.mcmc-diagnostics').scrollIntoView({block:'start'})")
+                shot = await call('Page.captureScreenshot', format='png', captureBeyondViewport=True)
+                Path('docs/screenshots/mcmc-diagnostics.png').write_bytes(base64.b64decode(shot['data']))
                 await js("{const input=document.querySelector('[data-setting=K_max]');input.value='4';input.dispatchEvent(new Event('input'))}")
                 assert await js("!document.querySelector('[data-layer=summary-density]') && state.data.summaries[0].saved_run.parameters.K_max===5")
                 await js("[...document.querySelectorAll('button')].find(b=>b.textContent==='Load saved run').click()")
                 await wait("!!document.querySelector('[data-layer=summary-density]')")
                 assert await js("state.data.summaries[0].parameters.K_max===5")
+                await js("{const input=document.querySelector('[data-sampling=draws]');input.value='123';input.dispatchEvent(new Event('input'));}")
+                assert await js("!document.querySelector('[data-layer=summary-density]') && state.data.summaries[0].parameters.sampling.draws===123")
+                await js("[...document.querySelectorAll('button')].find(b=>b.textContent==='Load saved run').click()")
+                await wait("!!document.querySelector('[data-layer=summary-density]')")
+                assert await js("document.querySelector('[data-sampling=draws]').value==='250'")
                 await js("[...document.querySelectorAll('button')].find(b=>b.textContent==='Remove saved result').click()")
-                assert await js("!state.data.summaries[0].saved_run && !document.querySelector('[data-layer=summary-density]')")
+                assert await js("!state.data.summaries[0].saved_run && !document.querySelector('[data-layer=summary-density]') && !document.querySelector('.mcmc-diagnostics')")
+                # A realistic 10k-row database must not create 10k editable DOM rows.
+                timing = await js("""await (async () => {
+                  const csv='id,c14_mean,c14_err,curve,label,datum\\n'+Array.from({length:10000},(_,i)=>`Determination ${i},2500,30,intcal20,Context ${i},BP1950`).join('\\n');
+                  const start=performance.now();
+                  const response=await fetch('/api/projects/import-csv?filename=database.csv',{method:'POST',body:csv});
+                  if(!response.ok) throw new Error(await response.text());
+                  const imported=await response.json();state.setSummaries([]);state.setEvents(imported.events);
+                  document.querySelector('#project-tab').click();
+                  return {milliseconds:performance.now()-start,csvBytes:new Blob([csv]).size};
+                })()""")
+                counts = await js("({events:state.data.events.length,projectRows:document.querySelectorAll('#project-events tr').length,calRows:document.querySelectorAll('#determination-rows tr').length,projectDisabled:document.querySelector('#add-event').disabled,calDisabled:document.querySelector('#add-row').disabled})")
+                assert counts == dict(events=10000, projectRows=100, calRows=100, projectDisabled=True, calDisabled=True), (counts, errors)
+                await js("{const p=document.querySelector('[aria-label=\"Project events page\"]');p.value=100;p.dispatchEvent(new Event('change'));const input=document.querySelector('#project-events tr[data-event-index=\"9999\"] [data-field=p1]');input.value='2550';input.dispatchEvent(new Event('input'));}")
+                assert await js("state.data.events[9999].parameters.c14_mean===2550")
+                await js("document.querySelector('#calibrate-tab').click();[...document.querySelectorAll('button')].find(b=>b.textContent==='Exclude all').click();{const p=document.querySelector('[aria-label=\"Radiocarbon events page\"]');p.value=100;p.dispatchEvent(new Event('change'));document.querySelector('#determination-rows tr[data-event-index=\"9999\"] [data-field=include]').click();p.value=1;p.dispatchEvent(new Event('change'));document.querySelector('#determination-rows [data-field=include]').click();}")
+                assert await js("state.data.events.filter(e=>e.include_in_calibration).length===2 && state.data.events[9999].include_in_calibration")
+                await js("window.largeCalibration=null;const largeFetch=window.fetch;window.fetch=(...args)=>{if(args[0]==='/api/calibrate')largeCalibration=JSON.parse(args[1].body);return largeFetch(...args)};document.querySelector('#calibrate-button').click()")
+                await wait("!document.querySelector('#calibrate-button').disabled && document.querySelectorAll('.sample-plot').length===2")
+                assert await js("largeCalibration.determinations.map(e=>e.id).join(',')==='Determination 0,Determination 9999' && largeCalibration.determinations[1].age===2550")
+                await js("document.querySelector('#summarize-tab').click();document.querySelector('#add-summary').click();document.querySelector('.summary-picker').open=true;{const search=document.querySelector('.summary-picker [type=search]');search.value='Determination 9999';search.dispatchEvent(new Event('input'));document.querySelector('.summary-choices [type=checkbox]').click();[...document.querySelectorAll('button')].find(b=>b.textContent==='Add selected').click();}")
+                assert await js("state.data.summaries[0].events[0].id==='Determination 9999' && document.querySelectorAll('.summary-choices [type=checkbox]').length<=100")
+                await js("document.querySelector('.sampling-settings').open=true;for(const [key,value] of Object.entries({draws:12,tune:8,chains:2})){const input=document.querySelector(`[data-sampling=${key}]`);input.value=value;input.dispatchEvent(new Event('input'));}document.querySelector('.summary-fit').click();")
+                await wait("!!state.data.summaries[0].saved_run && !document.querySelector('.summary-fit').disabled")
+                assert await js("state.data.summaries[0].saved_run.result.sampling.draws===12 && state.data.summaries[0].saved_run.result.sampling.tune===8 && state.data.summaries[0].saved_run.result.posterior.sizes.chain===2 && state.data.summaries[0].saved_run.parameters.sampling.chains===2")
+                await js("{const encoded=await fetch('/api/projects/encode',{method:'POST',body:JSON.stringify(state.data)});if(!encoded.ok)throw new Error(await encoded.text());const decoded=await fetch('/api/projects/decode',{method:'POST',body:await encoded.blob()});if(!decoded.ok)throw new Error(await decoded.text());state.replace(await decoded.json());}")
+                assert await js("state.data.events.length===10000 && state.data.events[9999].parameters.c14_mean===2550 && state.data.events[9999].include_in_calibration && state.data.summaries[0].events[0].id==='Determination 9999'")
+                assert await js("document.querySelector('[data-sampling=draws]').value==='12' && document.querySelector('[data-sampling=tune]').value==='8' && document.querySelector('[data-sampling=chains]').value==='2' && !!document.querySelector('[data-layer=summary-density]')")
+                print('PASS: shared sampling controls, defaults, legacy settings, stale-result invalidation, exact counts through real PyMC, saved/reopened settings and plots.')
+                print('PASS: 10,000-event import, bounded editable tables, last-page edit, cross-page calibration selection, searchable Summary picker and project archive roundtrip:', timing)
                 assert not errors,errors
                 print('PASS: Master table two-way edits/focus, mixed types, duplicate IDs, labels/datums, inclusion filtering, save/reopen; Summary/Phase benchmarks; failed-save protection, per-event curves, calibration, mobile/dark. Native chooser boundary substituted; real local API and disk IO, with browser filesystem APIs blocked.')
         finally:

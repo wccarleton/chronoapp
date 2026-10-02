@@ -38,6 +38,12 @@ def _worker(function, args, connection, log_path):
                 try:
                     result = function(*args, progress_callback=progress)
                     print("Completed", flush=True)
+                    if isinstance(result, dict) and 'mcmc' in result:
+                        from .mcmc_diagnostics import artifact
+                        log.flush()
+                        # Snapshot belongs to this result and travels with project saves.
+                        result['mcmc']['artifacts'].append(artifact(
+                            'messages.txt', 'text/plain', Path(log_path).read_bytes()))
                     connection.send(("result", result))
                 except Exception as error:
                     traceback.print_exc()

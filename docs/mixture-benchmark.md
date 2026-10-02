@@ -25,21 +25,29 @@ of draws where each weight is below 0.05; these are not inferred group counts.
 Model construction, measurement likelihoods, priors, sampling, and evaluation
 are in Chronologer's `density.py`. Public functions:
 `build_gaussian_mixture`, `fit_gaussian_mixture`, `evaluate_mixture_density`.
+These remain available. The app now calls the concise
+`chronologer.models.density.gmixture(data, params=..., mcmc_config=...)` wrapper,
+which delegates to the same implementation and returns the same result object.
 ChronoApp converts event records to existing distribution objects and serializes
 returned arrays; it does not construct a PyMC model.
 
 The app supports BP1950 normal, uniform, and radiocarbon measurements. It negates
 BP ages into the existing increasing negative-BP calendar coordinate. Other
-datums/families fail explicitly. Radiocarbon inputs must share one curve because
-the existing distribution's curve cache is class-wide. No curve-cache, IPPP,
-Phase, calibration, or existing single-density model changes are made.
+datums/families fail explicitly. Each radiocarbon distribution retains references
+to its selected curve's externally prepared spline pair. Identical curves reuse
+that pair; mixed installed curves are supported in the mixture model. The separate
+single-density API still takes one shared curve. IPPP, Phase, and the existing
+single-density model are unchanged.
 
 Defaults: C=mean measurement centres, S=max(range of centres, median measurement
 SD); ordered means Normal(C,S), scales LogNormal(log(0.2*S),0.75), symmetric
 weights Dirichlet(0.3). These are empirical data-scaled hyperpriors, not neutral
-priors. Engine callers can override C/S. PyMC NUTS uses two chains, 250 tune and
-250 draws, one core, `adapt_diag`, target acceptance 0.95, seed 912. The app's only
-mixture setting is K_max (1–20); no prior/sampler controls are added to the UI.
+priors. Engine callers can override C/S. The standalone engine retains its
+two-chain, 250-tune, 250-draw defaults. New app summaries default to four chains,
+1,000 tuning iterations and 1,000 retained draws per chain. These counts are
+editable in MCMC sampling and saved with each run. PyMC still uses one core,
+`adapt_diag`, target acceptance 0.95 and seed 912. K_max (1–20) remains the only
+mixture-specific control; priors and parameterization are unchanged.
 
 The requested-grid evaluator computes actual mixture PDFs for every draw and
 never renormalizes cropped grids. The default 2,048-point grid spans all retained

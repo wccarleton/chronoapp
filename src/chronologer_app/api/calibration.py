@@ -103,8 +103,8 @@ def calibrate(request: CalibrationRequest):
     try:
         ordered = [None] * len(request.determinations)
         for curve, indexed_rows in groups.items():
-            # A distinct process per curve preserves the existing engine's cache
-            # isolation. Never evaluate two different curves in the same worker.
+            # Keep the existing worker-per-curve orchestration for now; engine
+            # distributions also retain their own shared curve references.
             with ProcessPoolExecutor(max_workers=1, mp_context=multiprocessing.get_context("spawn")) as worker:
                 batch = worker.submit(calibrate_in_worker, curve, [row for _, row in indexed_rows]).result()
             for (index, _), result in zip(indexed_rows, batch["results"], strict=True):
