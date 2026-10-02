@@ -5,8 +5,10 @@ Uses an isolated local server and browser profile; no inference is performed.
 """
 import asyncio
 import base64
+import hashlib
 import json
 from pathlib import Path
+import re
 import socket
 import subprocess
 import tempfile
@@ -99,6 +101,12 @@ async def main():
                     data = base64.b64decode(shot['data'])
                     for target in ['docs/screenshots/curve-overlay.png', 'site/assets/calibration.png']:
                         Path(target).write_bytes(data)
+                    version = hashlib.sha256(data).hexdigest()[:16]
+                    index = Path('site/index.html')
+                    html = index.read_text(encoding='utf-8')
+                    html = re.sub(r'assets/calibration\.png(?:\?v=[a-f0-9]+)?',
+                                  f'assets/calibration.png?v={version}', html)
+                    index.write_text(html, encoding='utf-8')
                     print(f"Captured current calibration workspace: {size['width']} x {size['height']}")
             finally:
                 browser.terminate()
