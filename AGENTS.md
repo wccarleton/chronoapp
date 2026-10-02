@@ -1,0 +1,32 @@
+# Architecture and invariants
+
+- ChronoApp is a local browser UI plus a Python/FastAPI service.
+- Scientific models, calibration and likelihoods belong in sibling `../chronologer`.
+- Keep that package independent of app state, HTTP, files and browser code.
+- Engine entry points are `chronologer.models.density.single` / `gmixture`
+  and `chronologer.models.ippp.gp`; `chronologer.fit` is the optional dispatcher.
+- `frontend/js/project-state.js` owns shared semantic project state.
+- Project and Calibration edit the same events; calibration selection is separate.
+- `frontend/js/summarize.js` renders Summary and Process Lab workspaces.
+- `frontend/js/plots.js` owns plot interaction and export rendering.
+- `src/chronologer_app/api/` validates requests and exposes local endpoints.
+- `src/chronologer_app/services/` owns workers, result adaptation and diagnostics.
+- `projects.py` and `saved_results.py` validate project archives and saved runs.
+- Keep long inference jobs in isolated workers with app-wide progress/cancellation.
+- Parallel chains use PyMC's cores setting; preserve summed progress and process-tree cancellation.
+- CPU limits apply per fit; keep legacy saved settings compatible and record resolved cores.
+- Each radiocarbon event retains its own curve; engine objects reuse per-curve splines.
+- Never silently alter priors, likelihoods, calibration, sampling or public return types.
+- Display peak-scaling must not change scientific arrays or their normalization.
+- IPPP requires explicit observation endpoints; never infer them from event tails.
+- IPPP uses the full observation window and count likelihood, returning events/year.
+- Do not normalize intensity into a density or describe it as demographic population.
+- Datum metadata does not itself convert dates; validate supported input conventions.
+- Phase order is semantic, oldest-first; its canvas places older phases lower.
+- Phase graphics are schematic and do not define durations, gaps or inference.
+- Saved runs retain inputs, settings, plot data and diagnostics, not full chains.
+- Changed scientific inputs must invalidate displayed results; saved runs remain loadable.
+- Preserve old project compatibility and edits on failed reads/writes.
+- Use local native file APIs for ordinary Open/Save; browser copy tools are fallbacks.
+- Do not add inference backends, simulation or model features without task authorization.
+- Keep engine and app tests separate; browser workflow checks live in `scripts/`.

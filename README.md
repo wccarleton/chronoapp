@@ -66,7 +66,11 @@ are saved for future grouping/phase work. CSV imports also accept `label`, `datu
 and `include_in_calibration` (`true`/`false`) alongside the existing columns.
 
 Calibrate one or many radiocarbon determinations, inspect separate result plots,
-and view the selected calibration curve. Process Lab is a placeholder.
+and view the selected calibration curve. **Process Lab** now runs the basic
+[GP IPPP benchmark](docs/ippp-gp-benchmark.md): choose events and explicitly declare
+observation start/end (cal BP). Both dates are required and start blank. The model
+returns event intensity, not a normalized density, with parameter/event posteriors,
+MCMC diagnostics, vector exports and saved results. Simulation remains future work.
 The determination table has a bounded height and scrolls internally, with sticky
 column headings. Adding rows keeps the controls below the table in place and
 scrolls the new row into view.
@@ -114,7 +118,9 @@ if you understand MCMC sampling; the controls explain reliability, runtime,
 memory and report-size consequences. Tuning adapts the sampler and is discarded;
 it is not an additional trim of retained draws. Counts must be whole numbers
 (draws/chains positive, tuning nonnegative). One chain cannot provide between-chain
-R-hat. Chains still run sequentially within each worker. Settings persist with the
+R-hat. **Parallel chains / CPU cores** accepts a positive integer or blank for Auto
+(up to four, limited by chains and available CPUs). Set 1 for sequential chains.
+The limit is per fit; concurrent fits share CPU and memory. Settings persist with the
 summary and each run, and edits invalidate the displayed result. Legacy saved
 runs retain their recorded counts. Seed and other engine settings are unchanged.
 Short-run warnings

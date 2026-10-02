@@ -35,7 +35,7 @@ def _text(value, label, limit=120):
 
 
 def validate_project(project):
-    if not isinstance(project, dict) or not {"metadata", "events", "source_csv"} <= set(project) or set(project) - {"metadata", "events", "source_csv", "phases", "summaries"}:
+    if not isinstance(project, dict) or not {"metadata", "events", "source_csv"} <= set(project) or set(project) - {"metadata", "events", "source_csv", "phases", "summaries", "processes"}:
         raise ValueError("Project must contain metadata, events, and source_csv.")
     meta = project["metadata"]
     if not isinstance(meta, dict):
@@ -106,8 +106,15 @@ def validate_project(project):
     summaries = project.get("summaries", [])
     if not isinstance(summaries, list) or len(summaries) > 100:
         raise ValueError("Summaries must be a list of at most 100 specifications.")
+    processes = project.get('processes', [])
+    if not isinstance(processes, list) or len(processes) > 100:
+        raise ValueError('Processes must be a list of at most 100 specifications.')
+    if any(isinstance(s, dict) and s.get('model') != 'ippp_gp' for s in processes):
+        raise ValueError('Process Lab supports the ippp_gp model.')
+    if any(isinstance(s, dict) and s.get('model') == 'ippp_gp' for s in summaries):
+        raise ValueError('IPPP models belong in Process Lab.')
     summary_ids = set()
-    for summary in summaries:
+    for summary in summaries + processes:
         if (not isinstance(summary, dict) or not {"id", "label", "model", "events", "parameters"} <= set(summary)
                 or set(summary) - {"id", "label", "model", "events", "parameters", "saved_run"}):
             raise ValueError("Each summary requires id, label, model, events, and parameters.")
@@ -116,8 +123,8 @@ def validate_project(project):
         if summary["id"] in summary_ids:
             raise ValueError("Summary IDs must be unique.")
         summary_ids.add(summary["id"])
-        if summary["model"] not in ("density", "mixture"):
-            raise ValueError("Summary model must be density or mixture.")
+        if summary["model"] not in ("density", "mixture", 'ippp_gp'):
+            raise ValueError("Unsupported analysis model.")
         if not isinstance(summary["parameters"], dict):
             raise ValueError("Summary parameters must be a JSON object.")
         validate_saved_sampling(summary['parameters'])
@@ -211,6 +218,8 @@ def dump_project(project) -> bytes:
             archive.writestr("data/phases.json", encode(project["phases"]))
         if "summaries" in project:
             archive.writestr("data/summaries.json", encode(project["summaries"]))
+        if 'processes' in project:
+            archive.writestr('data/processes.json', encode(project['processes']))
         if project["source_csv"] is not None:
             archive.writestr("data/source.csv", project["source_csv"]["text"].encode("utf-8"))
             archive.writestr("data/source.json", encode({"name": project["source_csv"]["name"]}))
@@ -225,7 +234,7 @@ def load_project(content: bytes):
             infos = archive.infolist()
             names = [item.filename for item in infos]
             required = {"project.json", "data/events.json"}
-            allowed = required | {"data/source.csv", "data/source.json", "data/phases.json", "data/summaries.json"}
+            allowed = required | {"data/source.csv", "data/source.json", "data/phases.json", "data/summaries.json", 'data/processes.json'}
             if (len(names) != len(set(names)) or not required <= set(names)
                     or set(names) - allowed or sum(item.file_size for item in infos) > MAX_BYTES):
                 raise ValueError("Invalid project archive entries or expanded size exceeds 64 MiB.")
@@ -247,6 +256,8 @@ def load_project(content: bytes):
                 project["phases"] = read_json("data/phases.json")
             if "data/summaries.json" in names:
                 project["summaries"] = read_json("data/summaries.json")
+            if 'data/processes.json' in names:
+                project['processes'] = read_json('data/processes.json')
             return validate_project(project)
     except (zipfile.BadZipFile, UnicodeDecodeError, json.JSONDecodeError, RuntimeError, NotImplementedError, EOFError, zlib.error) as exc:
         raise ValueError(f"Invalid .chrono project archive: {exc}") from None

@@ -22,9 +22,10 @@ def test_counts_reach_worker_and_defaults_are_shared(monkeypatch, endpoint, payl
     monkeypatch.setattr(density, 'require_local_curve', lambda name: None)
     with TestClient(app) as client:
         assert client.post(endpoint, json=payload()).status_code == 202
-        assert queued[-1] == dict(draws=1000, tune=1000, chains=4, random_seed=912)
+        from chronologer_app.sampling import resolve_cores
+        assert queued[-1] == dict(draws=1000, tune=1000, chains=4, random_seed=912, cores=resolve_cores(4))
         assert client.post(endpoint, json={**payload(), 'sampling': dict(draws=27, tune=0, chains=3)}).status_code == 202
-        assert queued[-1] == dict(draws=27, tune=0, chains=3, random_seed=912)
+        assert queued[-1] == dict(draws=27, tune=0, chains=3, random_seed=912, cores=resolve_cores(3))
         for key, value in [('draws', 0), ('draws', 1.5), ('draws', True), ('draws', '100'),
                            ('tune', -1), ('chains', 0), ('chains', None), ('random_seed', 123)]:
             assert client.post(endpoint, json={**payload(), 'sampling': {key: value}}).status_code == 422

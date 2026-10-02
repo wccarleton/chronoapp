@@ -16,7 +16,7 @@ from .calibration import Determination, require_local_curve
 from ..services.jobs import get_jobs, TERMINAL
 from ..services.posterior_plots import posterior_plots
 from ..services.mcmc_diagnostics import build_diagnostics
-from ..sampling import DEFAULT_SAMPLING, SamplingSettings
+from ..sampling import DEFAULT_SAMPLING, SamplingSettings, resolve_cores
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -25,7 +25,9 @@ SAMPLING = dict(**DEFAULT_SAMPLING, random_seed=912)
 
 
 def sampling_for(request):
-    return {**SAMPLING, **(request.sampling.model_dump() if request.sampling is not None else {})}
+    settings = {**SAMPLING, **(request.sampling.model_dump() if request.sampling is not None else {})}
+    settings['cores'] = resolve_cores(settings['chains'], settings.get('cores'))
+    return settings
 Finite = Annotated[float, Field(strict=True, allow_inf_nan=False)]
 Positive = Annotated[float, Field(strict=True, gt=0, allow_inf_nan=False)]
 
@@ -54,6 +56,7 @@ class DensityRequest(BaseModel):
 
 def fit_in_worker(request: dict, sampling: dict, progress_callback=None):
     start = time.perf_counter()
+    process = 'observation' in request
     mixture = "events" in request
     if mixture:
         from scipy.stats import norm, uniform
@@ -69,9 +72,16 @@ def fit_in_worker(request: dict, sampling: dict, progress_callback=None):
                 observations.append(norm(-p['mean'], p['sd']))
             else:
                 observations.append(uniform(-p['upper'], p['upper'] - p['lower']))
-        result = chronologer.models.density.gmixture(
-            observations, params={'K_max': request['K_max']},
-            mcmc_config=sampling, progress_callback=progress_callback)
+        if process:
+            window = request['observation']
+            result = chronologer.models.ippp.gp(
+                observations, params=dict(start=-window['older'], end=-window['younger'],
+                                          grid_size=window['grid_size']),
+                mcmc_config=sampling, progress_callback=progress_callback)
+        else:
+            result = chronologer.models.density.gmixture(
+                observations, params={'K_max': request['K_max']},
+                mcmc_config=sampling, progress_callback=progress_callback)
     else:
         rows, settings = request["determinations"], request["settings"]
         curve = chronologer.load_calcurve(rows[0]["curve"], quiet=True)
@@ -90,12 +100,16 @@ def fit_in_worker(request: dict, sampling: dict, progress_callback=None):
         warnings.append('Only one chain: between-chain R-hat is unavailable.')
     if sampling['draws'] < 1000 or sampling['tune'] < 1000:
         warnings.append('Fewer than 1,000 retained draws or tuning iterations per chain: this may be insufficient. Inspect diagnostics.')
+    if process:
+        warnings.append('Assumes complete observation throughout the declared period. Intensity is events per year, not a normalized density or a demographic estimate. Check sensitivity to GP priors, window and grid resolution.')
     if divergences:
         warnings.append(f"{divergences} divergent transitions: this fit may be unreliable.")
     if "reached_max_treedepth" in stats and stats["reached_max_treedepth"].values.any():
         warnings.append("Maximum tree depth reached for some samples.")
     diagnostics = {}
-    if mixture:
+    if process:
+        diagnostics = result.specification
+    elif mixture:
         import numpy as np
         weights = posterior['weights'].values.reshape(-1, request['K_max'])
         diagnostics = dict(priors=result.priors, weight_mean=weights.mean(axis=0).tolist(),
@@ -104,11 +118,13 @@ def fit_in_worker(request: dict, sampling: dict, progress_callback=None):
     if progress_callback:
         total = (sampling['draws'] + sampling['tune']) * sampling['chains']
         progress_callback(dict(stage='Generating MCMC diagnostics', completed=total, total=total))
-    mcmc = build_diagnostics(result.posterior, rows, sampling)
-    return {"model": "gaussian_mixture" if mixture else "truncated_normal_hierarchy", "coordinate_system": "negative_bp",
+    mcmc = build_diagnostics(result.posterior, rows, sampling, model_spec=diagnostics if process else None)
+    curve = ({'intensity': {key: values.tolist() for key, values in result.intensity.items()}} if process
+             else {'density': {key: values.tolist() for key, values in result.density.items()}})
+    return {"model": 'ippp_gp' if process else "gaussian_mixture" if mixture else "truncated_normal_hierarchy", "coordinate_system": "negative_bp",
             "mcmc": mcmc,
             "diagnostics": diagnostics,
-            "density": {key: values.tolist() for key, values in result.density.items()},
+            **curve,
             "marginals": posterior_plots(posterior, rows),
             "posterior": {"type": "xarray.DataTree", "variables": list(posterior.data_vars),
                           "sizes": dict(posterior.sizes)},
@@ -149,6 +165,40 @@ class MixtureJobRequest(BaseModel):
     K_max: int = Field(default=5, strict=True, ge=1, le=20)
     label: str = Field(default='Mixture fit', min_length=1, max_length=250)
     sampling: SamplingSettings | None = None
+
+
+class ObservationWindow(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    older: Finite  # Required: never substitute calibrated tails or event extrema.
+    younger: Finite
+    grid_size: int = Field(default=32, strict=True, ge=4, le=256)
+
+    @model_validator(mode='after')
+    def ordered(self):
+        if self.older <= self.younger:
+            raise ValueError('Declare observation start (older cal BP) greater than end (younger cal BP).')
+        return self
+
+
+class GPJobRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    events: list[MixtureEvent] = Field(min_length=1, max_length=100)
+    observation: ObservationWindow
+    sampling: SamplingSettings | None = None
+    label: str = Field(default='GP IPPP fit', min_length=1, max_length=250)
+
+
+@router.post('/ippp/jobs', status_code=202)
+def start_gp(request: GPJobRequest):
+    for event in request.events:
+        if event.distribution == 'calrcarbon':
+            require_local_curve(event.parameters['curve'])
+    try:
+        return get_jobs().submit(fit_in_worker, (request.model_dump(), sampling_for(request)), request.label)
+    except ValueError as error:
+        raise HTTPException(429, str(error)) from None
+    except OSError:
+        raise HTTPException(503, 'Cannot write inference logs. Check the local log directory permissions.') from None
 
 
 @router.post('/mixture/jobs', status_code=202)

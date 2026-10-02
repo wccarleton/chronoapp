@@ -25,7 +25,7 @@ tabs.forEach((tab, index) => {
     tabs[next].focus();
   });
 });
-document.getElementById("back-to-calibrate").addEventListener("click", () => {
+document.getElementById("back-to-calibrate")?.addEventListener("click", () => {
   const tab = document.getElementById("calibrate-tab");
   activate(tab);
   tab.focus();
@@ -34,4 +34,5 @@ await initProject();
 initJobs();
 initPhase();
 initSummarize();
+initSummarize({ process: true });
 initCalibration();

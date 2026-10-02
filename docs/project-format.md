@@ -243,7 +243,11 @@ Density `parameters` hold explicit conventional-cal-BP `older`, `younger`, and
 `mean` values, plus `mean_sd` and `sd_scale` in years. Empty parameters show editable
 starting suggestions; fitting records those visible settings before submitting.
 Both models store sampling controls in `parameters.sampling` as
-`{"draws":1000,"tune":1000,"chains":4}` by default for new summaries. The run
+`{"draws":1000,"tune":1000,"chains":4,"cores":null}` by default for new summaries.
+Null cores means Auto (minimum of chains, available CPUs and four); explicit positive
+cores are capped by chains and available CPUs. Results record the resolved integer.
+Legacy three-field sampling settings remain valid and appear with one core in the UI.
+The run
 snapshot records the same object and its result records the effective counts
 plus the existing fixed seed. Saved run counts must match result metadata.
 Editing counts hides stale results; Load saved run restores the recorded counts.
@@ -291,3 +295,13 @@ for mixed CSV import, per-row selection, unavailable-curve preservation, Save /
 Open, default-preview independence, and calibration after changing a row's curve.
 
 Project Open/Save no longer depend on browser File System Access APIs.
+
+Process Lab stores an optional `processes` list in `data/processes.json`, using
+the same input/saved-run structure with model `ippp_gp`. `parameters.older` and
+`parameters.younger` are explicit observation dates in cal BP; incomplete drafts
+can omit them but fitting and saved results require both. `grid_size` defaults
+to 32 in the UI. Saved results contain `intensity` arrays (`t_values`, `rate_values`,
+`lower_values`, `upper_values`), GP parameter/event marginals, MCMC artifacts and
+the resolved observation/GP specification. Validation checks that intensity
+endpoints and the saved specification match the run's declared dates. Existing
+summary results and project archives remain unchanged.

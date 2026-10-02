@@ -37,7 +37,7 @@ def test_density_api_executes_public_engine_in_spawned_worker(monkeypatch, tmp_p
     assert result['posterior']['type'] == 'xarray.DataTree'
     assert {'tau', 'r_latent', 'tau_mu', 'tau_sd'} <= set(result['posterior']['variables'])
     assert result['posterior']['sizes']['draw'] == 8
-    assert result['sampling'] == {**sampling, 'random_seed': 912}
+    assert result['sampling'] == {**sampling, 'random_seed': 912, 'cores': 1}
     assert result['coordinate_system'] == 'negative_bp'
     assert all(len(a) == 512 and np.isfinite(a).all() for a in result['density'].values())
     assert np.all(np.array(result['density']['lower_values']) <= result['density']['upper_values'])

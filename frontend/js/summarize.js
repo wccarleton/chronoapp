@@ -8,12 +8,16 @@ import { DEFAULT_SAMPLING, samplingFor, samplingError, samplingControls } from "
 // Latest plot-ready result persists per summary; raw chains are never serialized.
 const models = { density: "Density", mixture: "Mixture" };
 const modelGlosses = {
+  ippp_gp: 'A Gaussian process describes log event intensity on a finite grid. The model fits event dates jointly with the full point-process likelihood over your declared observation period, including empty time and the total event count. The curve is events per year, not a normalized density or a demographic estimate. Assumes complete observation throughout the period; sampling effort, preservation and selection are not modeled.',
   density: "Assumes event dates follow one truncated-normal model within your calendar bounds. Fits its location and scale jointly with each event’s date using the radiocarbon measurements and calibration curve. Produces the model density averaged over the posterior, a pointwise 95% credible band, parameter posteriors, and model-conditioned event-date posteriors. Location and scale are the underlying normal’s parameters; truncation can make the model’s actual mean and SD differ.",
   mixture: "Maximum modes sets the maximum complexity available to the density model. The model estimates weights for all available Gaussian components and can give unnecessary components negligible weight. The displayed density is the quantity of interest; individual mixture components should not automatically be interpreted as archaeological groups or phases. Measurement uncertainty is modeled separately from event times.",
 };
 // Explicit starting suggestions in cal BP/year units, shown and editable before fitting.
 const defaults = { older: 5000, younger: 1, mean: 2500, mean_sd: 500, sd_scale: 400 };
-const settingsFor = summary => summary.model === "mixture"
+const settingsFor = summary => summary.model === 'ippp_gp'
+  ? { older: summary.parameters.older ?? null, younger: summary.parameters.younger ?? null,
+      grid_size: summary.parameters.grid_size === undefined ? 32 : summary.parameters.grid_size }
+  : summary.model === "mixture"
   ? { K_max: summary.parameters.K_max === undefined ? 5 : summary.parameters.K_max }
   : Object.fromEntries(Object.entries(defaults).map(([key, value]) => [key, summary.parameters[key] === undefined ? value : summary.parameters[key]]));
 const signature = summary => JSON.stringify([summary.model, summary.events, settingsFor(summary), samplingFor(summary)]);
@@ -36,10 +40,12 @@ function describe(event) {
     : `${event.id} · ${event.distribution}`;
 }
 
-export function initSummarize() {
-  const list = document.getElementById("summary-list");
-  const add = document.getElementById("add-summary");
-  const specs = () => state.data?.summaries ?? [];
+export function initSummarize({ process = false } = {}) {
+  const kind = process ? 'process' : 'summary';
+  const list = document.getElementById(`${kind}-list`);
+  const add = document.getElementById(`add-${kind}`);
+  const specs = () => (process ? state.data?.processes : state.data?.summaries) ?? [];
+  const availableModels = process ? { ippp_gp: 'IPPP · Gaussian process' } : models;
   let ownChange = false;
   let generation = 0;
   let projectDocument = state.data;
@@ -47,7 +53,7 @@ export function initSummarize() {
   const results = new Map(), failures = new Map(), plots = new Map();
   function commit(summaries) {
     ownChange = true;
-    try { state.setSummaries(summaries); } finally { ownChange = false; }
+    try { process ? state.setProcesses(summaries) : state.setSummaries(summaries); } finally { ownChange = false; }
   }
   function update(id, change) {
     commit(specs().map(summary => summary.id === id ? { ...summary, ...change } : summary));
@@ -66,19 +72,19 @@ export function initSummarize() {
     plots.forEach(plot => plot.dispose()); plots.clear();
     list.replaceChildren();
     add.disabled = !state.data || specs().length >= 100;
-    document.getElementById("summary-empty").hidden = specs().length > 0;
+    document.getElementById(`${kind}-empty`).hidden = specs().length > 0;
     for (const summary of specs()) {
       const card = node("section", undefined, "summary-card");
       card.dataset.summaryId = summary.id;
       const fields = node("div", undefined, "phase-fields");
-      const nameLabel = node("label", "Summary name");
+      const nameLabel = node("label", process ? 'Process name' : "Summary name");
       const name = node("input");
       name.value = summary.label; name.maxLength = 120;
       name.addEventListener("input", () => update(summary.id, { label: name.value }));
       nameLabel.append(name);
       const modelLabel = node("label", "Model");
       const select = node("select", undefined, "phase-distribution");
-      for (const [value, label] of Object.entries(models)) select.append(new Option(label, value));
+      for (const [value, label] of Object.entries(availableModels)) select.append(new Option(label, value));
       select.value = summary.model;
       select.addEventListener("change", () => { update(summary.id, { model: select.value }); render(); });
       modelLabel.append(select); fields.append(nameLabel, modelLabel);
@@ -145,11 +151,27 @@ export function initSummarize() {
         if (summary.events.length + chosen.size > 100) { status.textContent = "Each summary supports up to 100 events."; return; }
         update(summary.id, { events: [...summary.events, ...[...chosen].sort((a, b) => a - b).map(i => events[i])] }); render();
       }), addAll, button("Go to Project / load CSV", () => document.getElementById("project-tab").click()), status);
-      card.append(selected, removeAll, picker, button("Remove summary", () => {
+      card.append(selected, removeAll, picker, button(process ? 'Remove process' : "Remove summary", () => {
         if (window.confirm(`Remove ${summary.label}?`)) { commit(specs().filter(item => item.id !== summary.id)); render(); }
       }));
       const fitSettings = node("div", undefined, "phase-fields summary-settings");
-      if (summary.model === "density") {
+      if (summary.model === 'ippp_gp') {
+        fitSettings.append(node('p', 'Declare the observation period explicitly. These dates describe when events could have been observed, not the oldest and youngest measured events. Start must be older than end.', 'help'));
+        for (const [key, caption] of Object.entries({ older: 'Observation start · older cal BP (required)', younger: 'Observation end · younger cal BP (required)', grid_size: 'GP grid nodes' })) {
+          const label = node('label', caption), input = node('input');
+          input.type = 'number'; input.step = key === 'grid_size' ? '1' : 'any';
+          input.dataset.setting = key; input.value = settingsFor(summary)[key] ?? '';
+          input.required = true;
+          if (key === 'grid_size') { input.min = '4'; input.max = '256'; }
+          else input.placeholder = 'Required — no default';
+          input.addEventListener('input', () => {
+            const current = specs().find(s => s.id === summary.id);
+            update(summary.id, { parameters: { ...current.parameters, ...settingsFor(current), [key]: input.value === '' ? null : Number(input.value) } });
+          });
+          label.append(input); fitSettings.append(label);
+        }
+        fitSettings.append(node('p', 'Benchmark priors: baseline log rate Normal(log(10 / period length), 1.5); GP amplitude HalfNormal(1); length scale LogNormal(log(period length / 5), 0.5), with an exponentiated-quadratic covariance. Intensity is linearly interpolated between positive grid-node rates; its integral uses that same interpolation. Priors can be overridden in the engine API. Check grid-resolution and prior sensitivity before scientific use.', 'help'));
+      } else if (summary.model === "density") {
         fitSettings.append(node("p", "Truncated-normal model density. All events share these calendar bounds and one calibration curve. Review the bounds and hyperpriors before fitting.", "help"));
         for (const [key, caption] of Object.entries({ older: "Older bound (cal BP)", younger: "Younger bound (cal BP)", mean: "Location hyperprior mean (cal BP)", mean_sd: "Location hyperprior SD (years)", sd_scale: "Scale hyperprior: half-normal scale (years)" })) {
           const label = node("label", caption), input = node("input");
@@ -174,7 +196,7 @@ export function initSummarize() {
       }
       const fitStatus = node("p", running.has(summary.id) ? "Inference submitted. Progress, cancellation and messages are above the tabs; you can keep working elsewhere." : failures.get(summary.id) ?? "", "summary-fit-status help");
       fitStatus.setAttribute("role", "status");
-      const run = button(summary.model === "mixture" ? "Fit mixture" : "Fit density", async () => {
+      const run = button(process ? 'Fit GP IPPP' : summary.model === "mixture" ? "Fit mixture" : "Fit density", async () => {
         const current = specs().find(s => s.id === summary.id);
         if (running.has(summary.id) || !current) return;
         const settings = settingsFor(current);
@@ -182,16 +204,23 @@ export function initSummarize() {
         const error = samplingError(sampling);
         if (error) { fitStatus.textContent = error; return; }
         const mixture = current.model === "mixture";
+        const ippp = current.model === 'ippp_gp';
+        if (ippp && (![settings.older, settings.younger].every(v => typeof v === 'number' && Number.isFinite(v)) || settings.older <= settings.younger)) {
+          fitStatus.textContent = 'Declare both observation start and end explicitly; older cal BP must be greater than younger cal BP.'; return;
+        }
+        if (ippp && (!Number.isInteger(settings.grid_size) || settings.grid_size < 4 || settings.grid_size > 256)) {
+          fitStatus.textContent = 'GP grid nodes must be an integer from 4 to 256.'; return;
+        }
         if (mixture && (!Number.isInteger(settings.K_max) || settings.K_max < 1 || settings.K_max > 20)) {
           fitStatus.textContent = "Maximum modes must be an integer from 1 to 20."; return;
         }
-        if (mixture && (!current.events.length || current.events.some(e => !["calrcarbon", "normal", "uniform"].includes(e.distribution) || (e.datum ?? "BP1950") !== "BP1950"))) {
+        if ((mixture || ippp) && (!current.events.length || current.events.some(e => !["calrcarbon", "normal", "uniform"].includes(e.distribution) || (e.datum ?? "BP1950") !== "BP1950"))) {
           fitStatus.textContent = "Add normal, uniform, or radiocarbon measurements using BP1950 before fitting."; return;
         }
-        if (!mixture && (!current.events.length || current.events.some(e => e.distribution !== "calrcarbon"))) {
+        if (!mixture && !ippp && (!current.events.length || current.events.some(e => e.distribution !== "calrcarbon"))) {
           fitStatus.textContent = "Add radiocarbon events before fitting; other event distributions are not supported in this benchmark."; return;
         }
-        if (!mixture && (!Object.values(settings).every(v => typeof v === "number" && Number.isFinite(v))
+        if (!mixture && !ippp && (!Object.values(settings).every(v => typeof v === "number" && Number.isFinite(v))
             || settings.older <= settings.younger || settings.mean_sd <= 0 || settings.sd_scale <= 0)) {
           fitStatus.textContent = "Enter finite prior settings with positive scales and Older greater than Younger."; return;
         }
@@ -201,7 +230,7 @@ export function initSummarize() {
         const token = { id: current.id, generation, signature: signature(current) };
         running.set(current.id, token); results.delete(current.id); failures.delete(current.id); render();
         try {
-          const payload = mixture ? { K_max: settings.K_max, events: current.events.map(e => ({
+          const payload = (mixture || ippp) ? { ...(ippp ? { observation: settings } : { K_max: settings.K_max }), events: current.events.map(e => ({
             id: e.id, distribution: e.distribution, parameters: e.parameters, datum: e.datum ?? "BP1950",
           })) } : { settings, determinations: current.events.map(e => ({
             id: e.id, age: e.parameters.c14_mean, error: e.parameters.c14_err, curve: e.parameters.curve,
@@ -258,7 +287,7 @@ export function initSummarize() {
       if (!running.has(summary.id) && fitted && fitted.signature === signature(summary)) {
         try {
           const result = fitted.result;
-          resultContainer.append(node("p", `Completed in ${result.elapsed_seconds.toFixed(1)} s · ${result.sampling.chains} chains × ${result.sampling.draws} draws (${result.sampling.tune} tuning per chain). ${result.warnings.join(" ")}`, "help"));
+          resultContainer.append(node("p", `Completed in ${result.elapsed_seconds.toFixed(1)} s · ${result.sampling.chains} chains × ${result.sampling.draws} draws (${result.sampling.tune} tuning per chain) · ${result.sampling.cores ?? 1} cores. ${result.warnings.join(" ")}`, "help"));
           const plot = createSummaryPlot(resultContainer, result, summary.label);
           const mcmc = createMcmcDiagnostics(resultContainer, result.mcmc);
           plots.set(summary.id, { dispose() { plot.dispose(); mcmc.dispose(); } });
@@ -283,8 +312,8 @@ export function initSummarize() {
   });
   add.addEventListener("click", () => {
     if (!state.data || state.busy || specs().length >= 100) return;
-    commit([...specs(), { id: `summary-${crypto.randomUUID()}`, label: `Summary ${specs().length + 1}`,
-      model: "density", events: [], parameters: { sampling: { ...DEFAULT_SAMPLING } } }]);
+    commit([...specs(), { id: `${kind}-${crypto.randomUUID()}`, label: `${process ? 'Process' : 'Summary'} ${specs().length + 1}`,
+      model: process ? 'ippp_gp' : "density", events: [], parameters: { sampling: { ...DEFAULT_SAMPLING } } }]);
     render(); list.lastElementChild.querySelector("input").focus();
   });
   render();

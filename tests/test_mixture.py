@@ -14,7 +14,7 @@ def payload():
 
 def test_mixture_job_engine_and_serialization(monkeypatch, tmp_path):
     monkeypatch.setenv('CHRONOAPP_LOG_DIR', str(tmp_path))
-    sampling = dict(draws=6, tune=6, chains=2)
+    sampling = dict(draws=6, tune=6, chains=2, cores=2)
     with TestClient(app) as client:
         response = client.post('/api/mixture/jobs', json={**payload(), 'sampling': sampling})
         assert response.status_code == 202, response.text

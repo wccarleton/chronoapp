@@ -64,6 +64,7 @@ export async function initProject() {
     document.getElementById("calibration-form").inert = true;
     document.getElementById("phase-panel").inert = true;
     document.getElementById("summarize-panel").inert = true;
+    document.getElementById("process-panel").inert = true;
     name.disabled = true;
     document.getElementById("project-event-editor").inert = true;
     try { await action(); }
@@ -80,6 +81,7 @@ export async function initProject() {
       document.getElementById("calibration-form").inert = false;
       document.getElementById("phase-panel").inert = false;
       document.getElementById("summarize-panel").inert = false;
+      document.getElementById("process-panel").inert = false;
       name.disabled = false;
       document.getElementById("project-event-editor").inert = false;
     }

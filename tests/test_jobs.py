@@ -1,6 +1,8 @@
 import logging
 import sys
 import time
+import multiprocessing
+from pathlib import Path
 
 import pytest
 
@@ -24,6 +26,34 @@ def wait_for(predicate, timeout=20):
     while not predicate():
         assert time.monotonic() < deadline, 'Job timed out'
         time.sleep(.05)
+
+
+def child_heartbeat(path):
+    for _ in range(600):
+        Path(path).write_text(str(time.monotonic()))
+        time.sleep(.05)
+
+
+def work_with_child(path, progress_callback=None):
+    child = multiprocessing.get_context('spawn').Process(target=child_heartbeat, args=(path,))
+    child.start()
+    child.join()
+
+
+def test_cancel_stops_worker_descendants(tmp_path):
+    heartbeat = tmp_path / 'heartbeat.txt'
+    manager = JobManager(tmp_path, workers=1)
+    try:
+        job = manager.submit(work_with_child, (str(heartbeat),), 'Nested worker')['id']
+        wait_for(heartbeat.exists)
+        manager.cancel(job)
+        wait_for(lambda: manager.get(job)['finished'] is not None)
+        stamp = heartbeat.stat().st_mtime_ns
+        time.sleep(.3)
+        assert heartbeat.stat().st_mtime_ns == stamp
+        assert manager.get(job)['status'] == 'cancelled'
+    finally:
+        manager.close()
 
 
 def test_two_workers_queue_cancel_and_logs(tmp_path):

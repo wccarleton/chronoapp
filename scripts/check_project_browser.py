@@ -198,6 +198,7 @@ async def main():
                 await js("document.querySelector('#summarize-tab').click();document.querySelector('#add-summary').click();{let card=document.querySelector('.summary-card');let name=card.querySelector('input');name.value='Occupation';name.dispatchEvent(new Event('input'));let model=card.querySelector('select');model.value='mixture';model.dispatchEvent(new Event('change'));card=document.querySelector('.summary-card');card.querySelector('details').open=true;let search=card.querySelector('[type=search]');search.value=state.data.events[0].id;search.dispatchEvent(new Event('input'));let check=card.querySelector('[type=checkbox]');check.click();[...card.querySelectorAll('button')].find(b=>b.textContent==='Add selected').click()}")
                 assert await js("state.data.summaries[0].label==='Occupation' && state.data.summaries[0].model==='mixture' && state.data.summaries[0].events.length===1 && state.dirty")
                 assert await js("document.querySelector('[data-sampling=draws]').value==='1000' && document.querySelector('[data-sampling=tune]').value==='1000' && document.querySelector('[data-sampling=chains]').value==='4'")
+                assert await js("document.querySelector('[data-sampling=cores]').value==='' && state.data.summaries[0].parameters.sampling.cores===null")
                 await js("document.querySelector('.sampling-settings').open=true;for(const [key,value] of Object.entries({draws:40,tune:30,chains:2})){const input=document.querySelector(`[data-sampling=${key}]`);input.value=value;input.dispatchEvent(new Event('input'));}")
                 await js("window.savedSummaries=JSON.stringify(state.data.summaries);document.querySelector('#project-tab').click();document.querySelector('[data-project-action=save]').click()")
                 await wait('!state.busy && !state.dirty')
@@ -303,6 +304,7 @@ async def main():
                 await wait("document.querySelectorAll('[data-layer=summary-density] [data-event-index]').length===20")
                 assert await js("!document.querySelector('.summary-parameter-plot') && !state.dirty && document.querySelector('.mixture-diagnostics')!==null")
                 assert await js("document.querySelector('[data-sampling=draws]').value==='250' && document.querySelector('[data-sampling=chains]').value==='2'")
+                assert await js("document.querySelector('[data-sampling=cores]').value==='1'")
                 await js("document.querySelector('.mcmc-diagnostics').open=true")
                 await wait("document.querySelector('.mcmc-trace-image')?.naturalWidth>0")
                 assert await js("document.querySelectorAll('.mcmc-table-scroll tbody tr').length===7 && document.querySelector('.mcmc-diagnostics').textContent.includes('Geweke')")
@@ -352,12 +354,51 @@ async def main():
                 assert await js("state.data.summaries[0].events[0].id==='Determination 9999' && document.querySelectorAll('.summary-choices [type=checkbox]').length<=100")
                 await js("document.querySelector('.sampling-settings').open=true;for(const [key,value] of Object.entries({draws:12,tune:8,chains:2})){const input=document.querySelector(`[data-sampling=${key}]`);input.value=value;input.dispatchEvent(new Event('input'));}document.querySelector('.summary-fit').click();")
                 await wait("!!state.data.summaries[0].saved_run && !document.querySelector('.summary-fit').disabled")
+                assert await js("state.data.summaries[0].saved_run.result.sampling.cores===2")
                 assert await js("state.data.summaries[0].saved_run.result.sampling.draws===12 && state.data.summaries[0].saved_run.result.sampling.tune===8 && state.data.summaries[0].saved_run.result.posterior.sizes.chain===2 && state.data.summaries[0].saved_run.parameters.sampling.chains===2")
                 await js("{const encoded=await fetch('/api/projects/encode',{method:'POST',body:JSON.stringify(state.data)});if(!encoded.ok)throw new Error(await encoded.text());const decoded=await fetch('/api/projects/decode',{method:'POST',body:await encoded.blob()});if(!decoded.ok)throw new Error(await decoded.text());state.replace(await decoded.json());}")
                 assert await js("state.data.events.length===10000 && state.data.events[9999].parameters.c14_mean===2550 && state.data.events[9999].include_in_calibration && state.data.summaries[0].events[0].id==='Determination 9999'")
                 assert await js("document.querySelector('[data-sampling=draws]').value==='12' && document.querySelector('[data-sampling=tune]').value==='8' && document.querySelector('[data-sampling=chains]').value==='2' && !!document.querySelector('[data-layer=summary-density]')")
                 print('PASS: shared sampling controls, defaults, legacy settings, stale-result invalidation, exact counts through real PyMC, saved/reopened settings and plots.')
                 print('PASS: 10,000-event import, bounded editable tables, last-page edit, cross-page calibration selection, searchable Summary picker and project archive roundtrip:', timing)
+                # Process Lab: required endpoints, actual GP sampling, exports and saved restoration.
+                await js("state.setEvents([{id:'GP A',distribution:'normal',parameters:{mean:2000,sd:30}},{id:'GP B',distribution:'normal',parameters:{mean:2400,sd:40}}]);document.querySelector('#process-tab').click();document.querySelector('#add-process').click();window.gpRequests=0;const gpFetch=window.fetch;window.fetch=(...args)=>{if(args[0]==='/api/ippp/jobs')gpRequests++;return gpFetch(...args)};")
+                assert await js("[...document.querySelectorAll('#process-list [data-setting=older],#process-list [data-setting=younger]')].every(i=>i.value==='')")
+                await js("document.querySelector('#process-list .summary-picker').open=true;[...document.querySelectorAll('#process-list button')].find(b=>b.textContent==='Add all').click();document.querySelector('#process-list .summary-fit').click()")
+                assert await js("gpRequests===0 && document.querySelector('#process-list .summary-fit-status').textContent.includes('explicitly')")
+                await js("for(const [key,value] of Object.entries({older:3000,younger:1000,grid_size:8})){const input=document.querySelector(`#process-list [data-setting=${key}]`);input.value=value;input.dispatchEvent(new Event('input'));}for(const [key,value] of Object.entries({draws:6,tune:6,chains:1})){const input=document.querySelector(`#process-list [data-sampling=${key}]`);input.value=value;input.dispatchEvent(new Event('input'));}document.querySelector('#process-list .summary-fit').click();document.querySelector('#project-tab').click();")
+                await wait("!!state.data.processes[0].saved_run && !document.querySelector('#process-list .summary-fit').disabled")
+                await js("document.querySelector('#process-tab').click()")
+                # Hidden plots draw after ResizeObserver sees the newly visible tab.
+                await wait("document.querySelectorAll('#process-list [data-layer=process-intensity] [data-event-index]').length===2")
+                assert await js("gpRequests===1 && state.data.processes[0].saved_run.result.model==='ippp_gp' && document.querySelectorAll('#process-list [data-layer=process-intensity] [data-event-index]').length===2 && document.querySelectorAll('#process-list .summary-parameter-plot').length===4")
+                assert await js("state.data.processes[0].saved_run.result.intensity.t_values[0]===-3000 && state.data.processes[0].saved_run.result.intensity.t_values.at(-1)===-1000 && document.querySelector('#process-list').textContent.includes('events per year')")
+                await js("document.querySelector('#process-list .mcmc-diagnostics').open=true")
+                await wait("document.querySelector('#process-list .mcmc-trace-image')?.naturalWidth>0")
+                await js("{const encoded=await fetch('/api/projects/encode',{method:'POST',body:JSON.stringify(state.data)});if(!encoded.ok)throw new Error(await encoded.text());const decoded=await fetch('/api/projects/decode',{method:'POST',body:await encoded.blob()});if(!decoded.ok)throw new Error(await decoded.text());state.replace(await decoded.json());}")
+                assert await js("document.querySelector('#process-list [data-setting=older]').value==='3000' && !!document.querySelector('#process-list [data-layer=process-intensity]') && gpRequests===1")
+                await js("{const input=document.querySelector('#process-list [data-setting=younger]');input.value='900';input.dispatchEvent(new Event('input'));}")
+                assert await js("!document.querySelector('#process-list [data-layer=process-intensity]')")
+                await js("[...document.querySelectorAll('#process-list button')].find(b=>b.textContent==='Load saved run').click()")
+                assert await js("document.querySelector('#process-list [data-setting=younger]').value==='1000' && !!document.querySelector('#process-list [data-layer=process-intensity]') && gpRequests===1")
+                for extension in ('svg', 'png', 'pdf'):
+                    await js(f"document.querySelector('#process-list .summary-result > .plot-tools .plot-export-format').value='{extension}';document.querySelector('#process-list .summary-result > .plot-tools .plot-export-button').click()")
+                    await wait(f"document.querySelector('#process-list .summary-result > .plot-tools .plot-export-status').textContent==='{extension.upper()} downloaded'")
+                    target = download_dir / f'Process 1.{extension}'
+                    for _ in range(100):
+                        if target.exists(): break
+                        await asyncio.sleep(.1)
+                    exported = target.read_bytes()
+                    if extension == 'svg':
+                        assert b'<path' in exported and b'<image' not in exported and b'Intensity' in exported
+                    elif extension == 'png':
+                        assert exported.startswith(b'\x89PNG')
+                    else:
+                        assert exported.startswith(b'%PDF') and b'/Subtype /Image' not in exported
+                await js("document.querySelector('#process-list .summary-result').scrollIntoView({block:'start'})")
+                shot = await call('Page.captureScreenshot', format='png', captureBeyondViewport=True)
+                Path('docs/screenshots/ippp-gp.png').write_bytes(base64.b64decode(shot['data']))
+                print('PASS: Process Lab GP fit, explicit endpoints required, parameter/intensity/event plots, diagnostics, saved project restore and window-change invalidation.')
                 assert not errors,errors
                 print('PASS: Master table two-way edits/focus, mixed types, duplicate IDs, labels/datums, inclusion filtering, save/reopen; Summary/Phase benchmarks; failed-save protection, per-event curves, calibration, mobile/dark. Native chooser boundary substituted; real local API and disk IO, with browser filesystem APIs blocked.')
         finally:

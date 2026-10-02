@@ -4,6 +4,8 @@ from contextlib import redirect_stderr, redirect_stdout
 import logging
 import multiprocessing
 import os
+import signal
+import subprocess
 from pathlib import Path
 import threading
 import time
@@ -17,6 +19,8 @@ TERMINAL = {"completed", "failed", "cancelled"}
 
 
 def _worker(function, args, connection, log_path):
+    if os.name != 'nt':
+        os.setsid()  # Own process group: cancellation also stops sampler children.
     try:
         with open(log_path, "a", encoding="utf-8", buffering=1) as log:
             with redirect_stdout(log), redirect_stderr(log):
@@ -133,7 +137,16 @@ class JobManager:
             if process is not None and process.pid is not None:
                 process.join(timeout=1)
                 if process.is_alive():
-                    process.terminate()
+                    if os.name == 'nt':
+                        subprocess.run(['taskkill', '/PID', str(process.pid), '/T', '/F'],
+                                       capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
+                    else:
+                        try:
+                            os.killpg(process.pid, signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
+                    if process.is_alive():
+                        process.terminate()
                     process.join(timeout=5)
                 process.close()
             receive.close()

@@ -41,7 +41,7 @@ def artifact(name, mime, content):
     return dict(name=name, mime=mime, data=base64.b64encode(content).decode('ascii'))
 
 
-def build_diagnostics(trace, events, sampling):
+def build_diagnostics(trace, events, sampling, model_spec=None):
     posterior = trace['posterior'].to_dataset()
     stats = trace['sample_stats'].to_dataset()
     notes = [
@@ -91,7 +91,7 @@ def build_diagnostics(trace, events, sampling):
     report = dict(version=1, variables=variables, chains=chains, notes=notes,
                   versions={package: version(package) for package in ('pymc', 'pytensor', 'arviz', 'chronologer', 'chronologer-app')})
     artifacts = [artifact('diagnostics.json', 'application/json', json.dumps(
-        {**report, 'sampling': sampling, 'events': events}, allow_nan=False, indent=2).encode('utf-8'))]
+        {**report, 'sampling': sampling, 'events': events, **({'model_spec': model_spec} if model_spec is not None else {})}, allow_nan=False, indent=2).encode('utf-8'))]
     output = io.StringIO(newline='')
     fields = ['variable', 'r_hat', 'ess_bulk', 'ess_tail', 'mcse_mean', 'mcse_sd']
     writer = csv.writer(output)

@@ -30,20 +30,29 @@ def validate_saved_run(run):
         require(timestamp.tzinfo is not None, 'timestamp timezone')
     except (AttributeError, TypeError, ValueError):
         raise ValueError('Invalid saved Summary result: timestamp') from None
-    require(run['model'] in ('density', 'mixture') and isinstance(run['parameters'], dict), 'model/settings')
+    require(run['model'] in ('density', 'mixture', 'ippp_gp') and isinstance(run['parameters'], dict), 'model/settings')
+    process = run['model'] == 'ippp_gp'
     require(isinstance(run['events'], list) and 1 <= len(run['events']) <= 100, 'events')
     require(all(isinstance(e, dict) for e in run['events']), 'event records')
     r = run['result']
-    fields = {'model', 'coordinate_system', 'density', 'marginals', 'posterior', 'sampling', 'divergences', 'warnings', 'elapsed_seconds'}
+    curve_key = 'intensity' if process else 'density'
+    fields = {'model', 'coordinate_system', curve_key, 'marginals', 'posterior', 'sampling', 'divergences', 'warnings', 'elapsed_seconds'}
     require(isinstance(r, dict) and fields <= set(r) and not set(r) - fields - {'diagnostics', 'mcmc'}, 'result fields (raw samples are not supported)')
-    require(r['model'] == ('gaussian_mixture' if run['model'] == 'mixture' else 'truncated_normal_hierarchy') and r['coordinate_system'] == 'negative_bp', 'model/coordinates')
-    arrays(r['density'], band=True, strict=True)
-    require(set(r['density']) == {'t_values', 'pdf_values', 'lower_values', 'upper_values'}, 'density fields')
+    require(r['model'] == ('ippp_gp' if process else 'gaussian_mixture' if run['model'] == 'mixture' else 'truncated_normal_hierarchy') and r['coordinate_system'] == 'negative_bp', 'model/coordinates')
+    require(isinstance(r[curve_key], dict), 'curve arrays')
+    curve = r[curve_key]
+    if process:
+        require(set(curve) == {'t_values', 'rate_values', 'lower_values', 'upper_values'}, 'intensity fields')
+        arrays({**curve, 'pdf_values': curve['rate_values']}, band=True, strict=True)
+    else:
+        arrays(curve, band=True, strict=True)
+        require(set(curve) == {'t_values', 'pdf_values', 'lower_values', 'upper_values'}, 'density fields')
     require(number(r['elapsed_seconds']) and r['elapsed_seconds'] >= 0, 'elapsed time')
     require(type(r['divergences']) is int and r['divergences'] >= 0, 'divergences')
     require(isinstance(r['warnings'], list) and len(r['warnings']) <= 100 and all(isinstance(w, str) and len(w) <= 4000 for w in r['warnings']), 'warnings')
     sampling = r['sampling']
-    require(isinstance(sampling, dict) and set(sampling) == {'draws', 'tune', 'chains', 'random_seed'}, 'sampling metadata')
+    require(isinstance(sampling, dict) and set(sampling) in ({'draws', 'tune', 'chains', 'random_seed'}, {'draws', 'tune', 'chains', 'random_seed', 'cores'}), 'sampling metadata')
+    require(type(sampling.get('cores', 1)) is int and 1 <= sampling.get('cores', 1) <= sampling['chains'], 'sampling cores')
     require(all(type(v) is int for v in sampling.values()) and sampling['draws'] > 0 and sampling['tune'] >= 0 and sampling['chains'] > 0, 'sampling values')
     validate_saved_sampling(run['parameters'], r)
     posterior = r['posterior']
@@ -53,10 +62,11 @@ def validate_saved_run(run):
             and all(type(v) is int and v > 0 for v in posterior['sizes'].values()), 'posterior structure')
     marginals = r['marginals']
     require(isinstance(marginals, dict) and set(marginals) == {'parameters', 'events'}, 'marginals')
-    require(isinstance(marginals['parameters'], list) and len(marginals['parameters']) == (0 if run['model'] == 'mixture' else 2), 'parameter marginals')
+    names = ['log_rate', 'amplitude', 'length_scale', 'integrated_intensity'] if process else [] if run['model'] == 'mixture' else ['tau_mu', 'tau_sd']
+    require(isinstance(marginals['parameters'], list) and len(marginals['parameters']) == len(names), 'parameter marginals')
     for i, p in enumerate(marginals['parameters']):
         require(isinstance(p, dict) and set(p) == {'name', 'label', 'calendar', 't_values', 'pdf_values'}, 'parameter fields')
-        require(p['name'] == ['tau_mu', 'tau_sd'][i] and isinstance(p['label'], str) and p['calendar'] is (i == 0), 'parameter identity')
+        require(p['name'] == names[i] and isinstance(p['label'], str) and p['calendar'] is (not process and i == 0), 'parameter identity')
         arrays(p)
     require(isinstance(marginals['events'], list) and len(marginals['events']) == len(run['events']), 'event marginals')
     for i, e in enumerate(marginals['events']):
@@ -65,7 +75,18 @@ def validate_saved_run(run):
         arrays(e)
     diagnostics = r.get('diagnostics', {})
     require(isinstance(diagnostics, dict), 'diagnostics')
-    if run['model'] == 'mixture':
+    if process:
+        require(set(diagnostics) == {'start', 'end', 'grid_size', 'baseline_count', 'log_rate_sd', 'amplitude_scale', 'length_scale_median', 'length_scale_log_sd'}, 'GP specification')
+        require(all(number(v) for v in diagnostics.values()), 'finite GP specification')
+        require(diagnostics['start'] < diagnostics['end'], 'observation period')
+        require(type(diagnostics['grid_size']) is int and 4 <= diagnostics['grid_size'] <= 256, 'GP grid size')
+        require(all(diagnostics[k] > 0 for k in ('baseline_count', 'log_rate_sd', 'amplitude_scale', 'length_scale_median', 'length_scale_log_sd')), 'GP priors')
+        params = run['parameters']
+        require(number(params.get('older')) and number(params.get('younger')), 'explicit observation endpoints')
+        require(-params['older'] == diagnostics['start'] and -params['younger'] == diagnostics['end'], 'saved observation period')
+        require(params.get('grid_size') == diagnostics['grid_size'] == len(curve['t_values']), 'saved GP grid')
+        require(curve['t_values'][0] == diagnostics['start'] and curve['t_values'][-1] == diagnostics['end'], 'intensity observation domain')
+    elif run['model'] == 'mixture':
         require(set(diagnostics) == {'priors', 'weight_mean', 'weight_below_005', 'weight_interval'}, 'mixture diagnostics')
         k = run['parameters'].get('K_max')
         require(type(k) is int and 1 <= k <= 20, 'maximum modes')

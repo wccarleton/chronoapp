@@ -28,7 +28,7 @@
       <button id="summarize-tab" role="tab" aria-selected="false" aria-controls="summarize-panel" tabindex="-1">Summarize</button>
       <button id="phase-tab" role="tab" aria-selected="false" aria-controls="phase-panel" tabindex="-1">Phase <span class="tag">Preview</span></button>
       <button id="depth-tab" role="tab" aria-selected="false" aria-controls="depth-panel" tabindex="-1">Depth <span class="tag">Preview</span></button>
-      <button id="process-tab" role="tab" aria-selected="false" aria-controls="process-panel" tabindex="-1">Process Lab <span class="tag">Preview</span></button>
+      <button id="process-tab" role="tab" aria-selected="false" aria-controls="process-panel" tabindex="-1">Process Lab <span class="tag">Benchmark</span></button>
     </nav>
     <main>
       <section id="project-panel" role="tabpanel" aria-labelledby="project-tab">
@@ -131,8 +131,13 @@
         <section class="panel process-placeholder"><span class="eyebrow">A space for age–depth models</span><h2>Connect depth with time.</h2><p>A future workspace for modelling chronology through sediment cores and stratigraphic sequences.</p><p class="help">Age–depth modelling is not available in this version.</p></section>
       </section>
       <section id="process-panel" role="tabpanel" aria-labelledby="process-tab" hidden>
-        <div class="workspace-heading"><div><h1>Process Lab</h1><p>From chronological processes to archaeological observations.</p></div><span class="tag">In development</span></div>
-        <section class="panel process-placeholder"><span class="eyebrow">A space for temporal processes</span><h2>Explore how events unfold over time.</h2><p>A future workspace for shaping event intensities and exploring their realizations, with dating observations connected to the generating process.</p><div class="process-diagram" aria-label="Conceptual hierarchy"><span>Chronological process</span><span aria-hidden="true">↓</span><span>Events & contexts</span><span aria-hidden="true">↓</span><span>Dated samples</span><span aria-hidden="true">↓</span><span>Dating observations</span></div><p class="help">Process modelling is not available in this version.</p><button class="button secondary" id="back-to-calibrate">Return to Calibrate</button></section>
+        <div class="workspace-heading"><div><h1>Process Lab</h1><p>Infer event intensity over an explicitly declared observation period.</p></div><span class="tag">GP IPPP benchmark</span></div>
+        <section class="panel phase-workspace">
+          <button id="add-process" class="button secondary" type="button">+ Process</button>
+          <p class="help">Fit a Gaussian-process IPPP using project events. Observation start and end are required and are never inferred from the dates. Saved runs include plots, MCMC diagnostics and messages. Simulation is not implemented in this benchmark.</p>
+          <p id="process-empty" class="compact-empty">Add a process to begin.</p>
+          <div id="process-list"></div>
+        </section>
       </section>
     </main>
     <footer class="app-footer"><span>Chronologer</span><span>Scientific engine + independent application interface</span></footer>

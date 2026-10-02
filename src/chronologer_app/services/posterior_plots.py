@@ -13,11 +13,17 @@ def marginal(values):
 
 
 def posterior_plots(posterior, rows):
+    if 'intensity' in posterior:
+        definitions = [('log_rate', 'Baseline log intensity', False),
+                       ('amplitude', 'GP log-intensity amplitude', False),
+                       ('length_scale', 'GP length scale · years', False),
+                       ('integrated_intensity', 'Expected event count in observation period', False)]
+    else:
+        definitions = [('tau_mu', 'Model location (mean) · cal BP', True),
+                       ('tau_sd', 'Model scale (SD) · years', False)]
     parameters = [{"name": name, "label": label, "calendar": calendar,
                    **marginal(posterior[name].values)}
-                  for name, label, calendar in [
-                      ("tau_mu", "Model location (mean) · cal BP", True),
-                      ("tau_sd", "Model scale (SD) · years", False)] if name in posterior]
+                  for name, label, calendar in definitions if name in posterior]
     dates = posterior["tau"].transpose("chain", "draw", ...).values
     events = [{"id": row["id"], "index": i, **marginal(dates[..., i])}
               for i, row in enumerate(rows)]
