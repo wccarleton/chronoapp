@@ -10,6 +10,8 @@ a:focus-visible { outline: 3px solid var(--ochre); outline-offset: 5px; }
 .masthead { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding-block: 24px; border-bottom: 1px solid var(--line); }
 .brand { display: flex; align-items: center; gap: 6px; font-weight: 750; font-size: 26px; letter-spacing: -.04em; text-decoration: none; color: var(--ink); }
 .brand img { object-fit: contain; }
+.masthead nav { margin-left: auto; }
+.institute-logo { display: block; width: 180px; height: auto; flex-shrink: 0; }
 nav, .footer div { display: flex; flex-wrap: wrap; gap: 26px; }
 nav a { color: var(--ink); font-size: 15px; text-decoration: none; }
 .hero { display: grid; grid-template-columns: 1.65fr 1fr; align-items: center; gap: 90px; padding-block: 84px 78px; }
@@ -53,6 +55,9 @@ code { font-size: .9em; overflow-wrap: anywhere; }
 .doc-links a { font-size: 21px; font-family: Georgia, serif; }
 .doc-links p { margin: 5px 0 0; color: var(--muted); font-size: 15px; }
 @media (max-width: 800px) {
+  .masthead { flex-wrap: wrap; }
+  .masthead nav { order: 3; width: 100%; margin-left: 0; }
+  .institute-logo { margin-left: auto; width: 150px; }
   .wrap { width: calc(100% - 36px); }
   .hero { grid-template-columns: 1fr; gap: 35px; padding-block: 45px; }
   .field-note { max-width: 560px; }
@@ -67,6 +72,7 @@ code { font-size: .9em; overflow-wrap: anywhere; }
   .masthead { flex-wrap: wrap; gap: 12px; padding-block: 14px; }
   .brand { font-size: 24px; }
   .brand img { width: 44px; height: 44px; }
+  .institute-logo { width: 120px; }
   .button { width: 100%; padding-inline: 14px; gap: 12px; font-size: 15px; }
   .download-note { max-width: 280px; }
   .footer div { gap: 18px; }
