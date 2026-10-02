@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chronologer — Bayesian chronology for archaeology</title>
+  <meta name="description" content="Explore archaeological time with radiocarbon calibration, Bayesian event models, and clear uncertainty. Try the Chronologer Windows beta.">
+  <link rel="icon" href="assets/chronologer.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="wrap masthead">
+    <a class="brand" href="./"><img src="assets/chronologer.png" alt="" width="60" height="60">Chronologer</a>
+    <nav aria-label="Main navigation"><a href="docs/">Documentation</a><a href="https://github.com/wccarleton/chronoapp">GitHub <span aria-hidden="true">↗</span></a></nav>
+  </header>
+  <main id="main">
+    <section class="wrap hero">
+      <div class="hero-copy">
+        <p class="eyebrow">Archaeological chronology · Windows beta</p>
+        <h1>Explore the past.<br><em>Keep uncertainty<br>in the picture.</em></h1>
+        <p class="intro">Radiocarbon calibration and Bayesian chronological modelling, without the scripting. Bring your dates together, make your assumptions explicit, and explore when events happened.</p>
+        <a class="button" href="https://github.com/wccarleton/chronoapp/releases/download/v0.1.0-beta.1/Chronologer-0.1.0-beta.1-win64.zip">Download the Windows beta <span aria-hidden="true">↓</span></a>
+        <p class="download-note">v0.1.0-beta.1 · Windows 64-bit · No Python installation needed</p>
+      </div>
+      <aside class="field-note">
+        <span class="note-number" aria-hidden="true">01 / TIME &amp; EVIDENCE</span>
+        <h2>From dates<br>to questions.</h2>
+        <p>Calibrate a determination. Explore the temporal distribution of a collection. Model event intensity across an observation period.</p>
+        <p>Each is a different question. Chronologer keeps the models, assumptions, and uncertainty visible.</p>
+        <a href="docs/">Explore the methods <span aria-hidden="true">→</span></a>
+      </aside>
+    </section>
+    <section class="wrap workspace" aria-labelledby="workspace-title">
+      <div class="section-heading"><h2 id="workspace-title">A workspace for archaeological time</h2><span>Calibrate · Model · Inspect</span></div>
+      <figure>
+        <a href="assets/calibration.png" aria-label="View the full calibration screenshot"><img class="screenshot" src="assets/calibration.png" alt="Chronologer calibration workspace showing radiocarbon determinations, calibrated date distributions, and the IntCal20 curve." width="1425" height="1909" loading="lazy"></a>
+        <figcaption>Radiocarbon calibration with uncertainty and curve overlays. An example from the application.</figcaption>
+      </figure>
+    </section>
+    <section class="wrap features" aria-label="What you can do">
+      <article><span class="eyebrow">01 / Calibrate</span><h2>Start with your evidence</h2><p>Import radiocarbon dates from CSV or enter them directly. Compare individual and stacked calibrations using IntCal20.</p></article>
+      <article><span class="eyebrow">02 / Model</span><h2>Ask about events through time</h2><p>Fit single-density and mixture models, or estimate event intensity with a Gaussian-process point-process model.</p></article>
+      <article><span class="eyebrow">03 / Inspect</span><h2>Keep the reasoning visible</h2><p>Review MCMC diagnostics, export figures, and save inputs and results together in a portable project.</p></article>
+    </section>
+    <section class="wrap getting-started" aria-labelledby="start-title">
+      <div><p class="eyebrow">Try it with your dates</p><h2 id="start-title">Download. Unzip. Open.</h2><p>Run <code>ChronoApp.exe</code> inside the extracted folder. The local application opens in your browser. Example CSVs are included in <code>docs/examples/</code>.</p></div>
+      <div class="beta-note"><strong>A first public beta</strong><p>Inspect results critically and check MCMC diagnostics before scientific use.</p><a href="https://github.com/wccarleton/chronoapp/issues">Report a problem <span aria-hidden="true">↗</span></a></div>
+    </section>
+  </main>
+  <footer class="wrap footer"><span>Chronologer · W. Christopher Carleton</span><div><a href="https://github.com/wccarleton/chronoapp/blob/main/LICENSE">MIT license</a><a href="docs/">Documentation</a><a href="https://github.com/wccarleton/chronoapp">Source code</a></div></footer>
+</body>
+</html>
