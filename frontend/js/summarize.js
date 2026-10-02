@@ -12,7 +12,7 @@ const modelGlosses = {
   density: "Assumes event dates follow one truncated-normal model within your calendar bounds. Fits its location and scale jointly with each event’s date using the radiocarbon measurements and calibration curve. Produces the model density averaged over the posterior, a pointwise 95% credible band, parameter posteriors, and model-conditioned event-date posteriors. Location and scale are the underlying normal’s parameters; truncation can make the model’s actual mean and SD differ.",
   mixture: "Maximum modes sets the maximum complexity available to the density model. The model estimates weights for all available Gaussian components and can give unnecessary components negligible weight. The displayed density is the quantity of interest; individual mixture components should not automatically be interpreted as archaeological groups or phases. Measurement uncertainty is modeled separately from event times.",
 };
-// Explicit starting suggestions in cal BP/year units, shown and editable before fitting.
+// Explicit starting suggestions in BP1950/year units, shown and editable before fitting.
 const defaults = { older: 5000, younger: 1, mean: 2500, mean_sd: 500, sd_scale: 400 };
 const settingsFor = summary => summary.model === 'ippp_gp'
   ? { older: summary.parameters.older ?? null, younger: summary.parameters.younger ?? null,
@@ -157,7 +157,7 @@ export function initSummarize({ process = false } = {}) {
       const fitSettings = node("div", undefined, "phase-fields summary-settings");
       if (summary.model === 'ippp_gp') {
         fitSettings.append(node('p', 'Declare the observation period explicitly. These dates describe when events could have been observed, not the oldest and youngest measured events. Start must be older than end.', 'help'));
-        for (const [key, caption] of Object.entries({ older: 'Observation start · older cal BP (required)', younger: 'Observation end · younger cal BP (required)', grid_size: 'GP grid nodes' })) {
+        for (const [key, caption] of Object.entries({ older: 'Observation start · older years (BP1950) (required)', younger: 'Observation end · younger years (BP1950) (required)', grid_size: 'GP grid nodes' })) {
           const label = node('label', caption), input = node('input');
           input.type = 'number'; input.step = key === 'grid_size' ? '1' : 'any';
           input.dataset.setting = key; input.value = settingsFor(summary)[key] ?? '';
@@ -173,7 +173,7 @@ export function initSummarize({ process = false } = {}) {
         fitSettings.append(node('p', 'Benchmark priors: baseline log rate Normal(log(10 / period length), 1.5); GP amplitude HalfNormal(1); length scale LogNormal(log(period length / 5), 0.5), with an exponentiated-quadratic covariance. Intensity is linearly interpolated between positive grid-node rates; its integral uses that same interpolation. Priors can be overridden in the engine API. Check grid-resolution and prior sensitivity before scientific use.', 'help'));
       } else if (summary.model === "density") {
         fitSettings.append(node("p", "Truncated-normal model density. All events share these calendar bounds and one calibration curve. Review the bounds and hyperpriors before fitting.", "help"));
-        for (const [key, caption] of Object.entries({ older: "Older bound (cal BP)", younger: "Younger bound (cal BP)", mean: "Location hyperprior mean (cal BP)", mean_sd: "Location hyperprior SD (years)", sd_scale: "Scale hyperprior: half-normal scale (years)" })) {
+        for (const [key, caption] of Object.entries({ older: "Older bound · years (BP1950)", younger: "Younger bound · years (BP1950)", mean: "Location hyperprior mean · years (BP1950)", mean_sd: "Location hyperprior SD (years)", sd_scale: "Scale hyperprior: half-normal scale (years)" })) {
           const label = node("label", caption), input = node("input");
           input.type = "number"; input.step = "any"; input.dataset.setting = key;
           input.value = settingsFor(summary)[key] ?? "";
@@ -206,7 +206,7 @@ export function initSummarize({ process = false } = {}) {
         const mixture = current.model === "mixture";
         const ippp = current.model === 'ippp_gp';
         if (ippp && (![settings.older, settings.younger].every(v => typeof v === 'number' && Number.isFinite(v)) || settings.older <= settings.younger)) {
-          fitStatus.textContent = 'Declare both observation start and end explicitly; older cal BP must be greater than younger cal BP.'; return;
+          fitStatus.textContent = 'Declare both observation start and end explicitly; older years (BP1950) must be greater than younger years (BP1950).'; return;
         }
         if (ippp && (!Number.isInteger(settings.grid_size) || settings.grid_size < 4 || settings.grid_size > 256)) {
           fitStatus.textContent = 'GP grid nodes must be an integer from 4 to 256.'; return;

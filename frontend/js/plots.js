@@ -55,11 +55,10 @@ function axisNumber(value, span) {
 }
 
 // Explicit domains are conventional cal BP; the plot uses engine coordinates.
-function domainControls(label, apply, actionLabel = "Apply", calendar = true) {
+function domainControls(label, apply, actionLabel = "Apply", calendar = true, units = calendar ? "cal BP" : "years") {
   const form = element("form", "domain-controls");
   form.noValidate = true;
   form.setAttribute("aria-label", label);
-  const units = calendar ? "cal BP" : "years";
   const inputs = (calendar ? ["Older", "Younger"] : ["Minimum", "Maximum"]).map((name, i) => {
     const wrapper = element("label", "domain-label", `${name} ${units}`);
     const input = element("input", i ? "domain-younger" : "domain-older");
@@ -118,13 +117,15 @@ export function resultDomain(results) {
 }
 
 class InteractivePlot {
-  constructor(container, { title, subtitle = "", label, base, height, draw, domainApplied, useGlobal, overlayRows = null, determination = null, rowTicks = null, fitAll = null, exportNote = null, calendar = true, interactive = true }) {
+  constructor(container, { title, subtitle = "", label, xLabel = null, domainUnits = undefined, visualLegend = null, base, height, draw, domainApplied, useGlobal, overlayRows = null, determination = null, rowTicks = null, fitAll = null, exportNote = null, calendar = true, interactive = true }) {
     this.base = copyView(base);
     this.view = copyView(base);
     this.container = container;
     this.height = height;
     this.drawData = draw;
     this.label = label;
+    this.xLabel = xLabel ?? (calendar ? "Calendar age (cal BP)" : "Scale / standard deviation (years)");
+    this.visualLegend = visualLegend;
     this.calendar = calendar;
     this.overlayRows = overlayRows;
     this.showCurve = false;
@@ -133,7 +134,7 @@ class InteractivePlot {
     this.overlayReference = null;
     this.rowTicks = rowTicks;
     this.status = element("span", "plot-view-status", "Configured view");
-    this.controls = domainControls(title, domain => domainApplied(domain), "Apply", calendar);
+    this.controls = domainControls(title, domain => domainApplied(domain), "Apply", calendar, domainUnits);
     const actions = element("div", "plot-actions");
     actions.append(
       button("+", () => this.zoom(.8), `Zoom in: ${title}`),
@@ -196,7 +197,7 @@ class InteractivePlot {
       exportStatus.classList.remove("export-error");
       try {
         await exportPlot(this.svg, { title, subtitle, overlay: this.showCurve || this.showUncalibrated,
-          legend: this.layerLegend(), note: exportNote, calendar: this.calendar,
+          legend: this.layerLegend(), note: exportNote, calendar: this.calendar, xLabel: this.xLabel,
           radiocarbonSubtitle: Boolean(determination), summary: determination ? calibratedSummary(determination) : null }, format.value);
         exportStatus.textContent = `${format.value.toUpperCase()} downloaded`;
       } catch (error) {
@@ -227,11 +228,12 @@ class InteractivePlot {
     clip.append(this.clipRect);
     defs.append(clip);
     this.axes = svgElement("g");
+    this.legend = svgElement("g", { "data-layer": "visual-legend" });
     this.background = svgElement("g", { "clip-path": `url(#${clipId})`, "data-layer": "calibration-curve" });
     this.uncalibrated = svgElement("g", { "clip-path": `url(#${clipId})`, "data-layer": "uncalibrated-density" });
     this.data = svgElement("g", { "clip-path": `url(#${clipId})`, "data-layer": rowTicks ? "stacked-densities" : overlayRows ? "calibration-output" : "curve" });
     // Keep the same SVG element throughout gestures so pointer capture survives.
-    this.svg.append(svgElement("title", {}, title), defs, this.axes, this.background, this.data, this.uncalibrated);
+    this.svg.append(svgElement("title", {}, title), defs, this.axes, this.background, this.data, this.uncalibrated, this.legend);
     container.append(this.svg);
     if (!interactive) {
       this.svg.removeAttribute("tabindex");
@@ -290,7 +292,7 @@ class InteractivePlot {
     this.left = this.rowTicks ? Math.min(180, Math.max(95, this.width * .24)) : 78;
     this.right = this.width - (this.showCurve || this.showUncalibrated ? 78 : 20);
     this.top = 30;
-    this.bottom = this.height - 40;
+    this.bottom = this.height - (this.visualLegend ? 150 : 58);
     this.svg.setAttribute("viewBox", `0 0 ${this.width} ${this.height}`);
     const { x: domain, y: range } = this.view;
     const x = value => this.left + (value - domain[0]) / (domain[1] - domain[0]) * (this.right - this.left);
@@ -324,7 +326,44 @@ class InteractivePlot {
         addText(this.left - 9, y(value) + 4, axisNumber(value, range[1] - range[0]), "end");
       }
     }
-    addText(this.left, 16, this.label);
+    if (this.rowTicks) {
+      addText(this.left, 16, this.label);
+    } else {
+      const labelY = (this.top + this.bottom) / 2;
+      this.axes.append(svgElement("text", {
+        x: 12, y: labelY, "text-anchor": "middle", class: "axis-title",
+        transform: `rotate(-90 12 ${labelY})`,
+      }, this.label));
+    }
+    this.axes.append(svgElement("text", {
+      x: (this.left + this.right) / 2, y: this.bottom + 43,
+      "text-anchor": "middle", class: "axis-title",
+    }, this.xLabel));
+    this.legend.replaceChildren();
+    if (this.visualLegend) {
+      const entries = [
+        ["mean", this.visualLegend.mean],
+        ["interval", "95% credible interval (pointwise)"],
+        ...(this.visualLegend.events ? [["events", "Posterior event-date densities"]] : []),
+      ];
+      entries.forEach(([kind, caption], index) => {
+        const row = svgElement("g", { transform: `translate(12 ${this.bottom + 65 + index * 25})` });
+        if (kind === "events") {
+          for (const offset of [0, 16]) row.append(svgElement("path", {
+            d: `M${offset},8 v-3 h5 v-6 h5 v-7 h5 v5 h5 v7 h5 v4 Z`,
+            fill: "currentColor", "fill-opacity": .16, stroke: "currentColor", "stroke-opacity": .35, "stroke-width": .8,
+          }));
+        } else {
+          row.append(svgElement("path", { d: "M0,5 Q20,-16 42,-2 L42,7 Q20,-3 0,10 Z", class: "curve-band" }));
+          if (kind === "mean") row.append(svgElement("path", { d: "M0,8 Q20,-9 42,3", class: "data-line" }));
+        }
+        row.append(svgElement("text", { x: 54, y: 5 }, caption));
+        this.legend.append(row);
+      });
+      if (this.visualLegend.events) this.legend.append(svgElement("text", {
+        x: 66, y: this.bottom + 138,
+      }, "Peaks scaled to 20% for display only"));
+    }
     this.axes.append(svgElement("line", { x1: this.left, x2: this.right, y1: this.bottom, y2: this.bottom, class: "axis" }));
     this.background.replaceChildren();
     this.uncalibrated.replaceChildren();
@@ -390,12 +429,15 @@ export function createSummaryPlot(container, result, title) {
   const base = { x: [times[0], times.at(-1)], y: [0, Math.max(...high, ...mean) * 1.08] };
   const parameters = element("div", "summary-parameter-plots");
   if (result.marginals?.parameters?.length) container.append(parameters);
-  const note = process
+  const modelNote = process
     ? 'Posterior mean event intensity and pointwise 95% credible interval across the declared observation period. Units: events per year; no area normalization. Translucent event-date posteriors are peak-scaled to 20% of the intensity curve for display only. Inspect MCMC diagnostics and sensitivity to the observation window, GP priors and grid.'
     : "Posterior mean model density and pointwise 95% credible interval, integrating location and scale uncertainty. Translucent event-date posteriors share the calendar axis, each peak scaled to 20% of the model curve peak (display only). Inspect MCMC diagnostics before interpretation.";
-  container.append(element("h3", "", process ? 'Event intensity and posterior event dates · cal BP' : "Model density and posterior event dates · cal BP"));
+  const note = `${modelNote} Dates are expressed in years using the BP1950 datum (before AD 1950). Where radiocarbon determinations are used, they are calibrated as part of modelling using each event’s selected calibration curve.`;
+  container.append(element("h3", "", process ? 'Event intensity and posterior event dates · BP1950' : "Model density and posterior event dates · BP1950"));
   const plot = new InteractivePlot(container, {
-    title, subtitle: `${process ? 'GP IPPP' : result.model === "gaussian_mixture" ? "Gaussian mixture" : "Truncated-normal radiocarbon hierarchy"} · calendar age (cal BP)`, label: process ? 'Intensity (events/year); event dates height-scaled' : "Model density / year; events height-scaled", base, height: 400,
+    title, subtitle: `${process ? 'GP IPPP' : result.model === "gaussian_mixture" ? "Gaussian mixture" : "Truncated-normal radiocarbon hierarchy"} · Years (BP1950)`, label: process ? 'Event intensity (events/year)' : "Model density (1/year)", base, height: 510,
+    xLabel: "Years (BP1950)", domainUnits: "years (BP1950)",
+    visualLegend: { mean: process ? "Posterior mean event intensity" : "Posterior mean model density", events: Boolean(result.marginals?.events?.length) },
     exportNote: `${note} ${result.divergences} divergences.`,
     domainApplied: domain => plot.setBase({ x: domain, y: base.y }),
     draw(group, x, y) {
@@ -422,7 +464,7 @@ export function createSummaryPlot(container, result, title) {
   for (const parameter of result.marginals?.parameters ?? []) {
     const section = element("section", "summary-parameter-plot");
     section.dataset.parameter = parameter.name;
-    const caption = parameter.label;
+    const caption = parameter.label.replace(/cal BP/g, "BP1950");
     section.append(element("h3", "", caption));
     parameters.append(section);
     const times = parameter.t_values, values = parameter.pdf_values;
@@ -430,6 +472,7 @@ export function createSummaryPlot(container, result, title) {
     const marginalPlot = new InteractivePlot(section, {
       title: `${title} — ${caption}`, subtitle: `Marginal posterior: ${parameter.name}`,
       label: process ? 'Posterior density' : "Posterior density / year", calendar: parameter.calendar, height: 190, base, interactive: false,
+      xLabel: parameter.calendar ? "Years (BP1950)" : caption, domainUnits: parameter.calendar ? "years (BP1950)" : undefined,
       exportNote: process ? 'Histogram of retained GP IPPP posterior draws.' : "Histogram of retained posterior draws. Location and scale are truncated-normal parameters, not the truncated distribution's actual moments.",
       domainApplied: domain => marginalPlot.setBase({ x: domain, y: base.y }),
       draw(group, x, y) {

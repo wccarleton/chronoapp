@@ -390,7 +390,7 @@ async def main():
                         await asyncio.sleep(.1)
                     exported = target.read_bytes()
                     if extension == 'svg':
-                        assert b'<path' in exported and b'<image' not in exported and b'Intensity' in exported
+                        assert b'<path' in exported and b'<image' not in exported and b'Event intensity (events/year)' in exported
                     elif extension == 'png':
                         assert exported.startswith(b'\x89PNG')
                     else:

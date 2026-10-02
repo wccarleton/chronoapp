@@ -58,6 +58,9 @@ function styleSnapshot(snapshot, overlay) {
     "right-axis-label": { fill: "#765836" },
   };
   for (const node of snapshot.querySelectorAll("*")) {
+    for (const attribute of ["fill", "stroke"]) {
+      if (node.getAttribute(attribute) === "currentColor") node.setAttribute(attribute, "#263b46");
+    }
     if (node.tagName === "text") {
       node.setAttribute("fill", "#435964");
       node.setAttribute("font-family", FONT);
@@ -93,7 +96,7 @@ function wrapText(value, width, size, bold = false) {
   if (line) lines.push(line);
   return lines;
 }
-function buildSvg(snapshot, { title, subtitle, overlay, legend, note, radiocarbonSubtitle, summary, calendar = true }, fonts) {
+function buildSvg(snapshot, { title, subtitle, overlay, legend, note, radiocarbonSubtitle, summary, calendar = true, xLabel }, fonts) {
   styleSnapshot(snapshot, overlay);
   const [,, plotWidth, plotHeight] = snapshot.getAttribute("viewBox").split(/\s+/).map(Number);
   const width = plotWidth + 48;
@@ -120,7 +123,7 @@ function buildSvg(snapshot, { title, subtitle, overlay, legend, note, radiocarbo
   plot.append(...snapshot.childNodes);
   output.append(plot);
   cursor += plotHeight + 14;
-  lines(calendar ? "Calendar age · cal BP (before AD 1950) · Older ← → Younger" : "Scale / standard deviation · years", 11, "#435964");
+  lines(calendar ? `${xLabel === "Years (BP1950)" ? "Years (BP1950) · before AD 1950" : "Calendar age · cal BP (before AD 1950)"} · Older ← → Younger` : xLabel ?? "Scale / standard deviation · years", 11, "#435964");
   lines(note ?? "Chronologer · Current view · Engine calibration values preserved", 9, "#667984");
   const height = cursor + 12;
   output.setAttribute("height", height);
