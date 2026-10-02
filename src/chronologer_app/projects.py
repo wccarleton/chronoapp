@@ -8,6 +8,7 @@ import zipfile
 import zlib
 from datetime import datetime, timezone
 from importlib.metadata import version
+from . import __version__
 
 from chronologer.calcurves import DEFAULT_CURVES
 from .saved_results import validate_saved_run
@@ -22,7 +23,7 @@ def new_project():
     now = datetime.now(timezone.utc).isoformat()
     return {
         "metadata": {"format_version": 1, "project_name": "Untitled project",
-                     "chronoapp_version": version("chronologer-app"),
+                     "chronoapp_version": __version__,
                      "chronologer_version": version("chronologer"),
                      "created_at": now, "modified_at": now, "active_dataset": "events"},
         "events": [], "source_csv": None,

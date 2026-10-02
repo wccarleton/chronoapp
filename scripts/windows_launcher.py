@@ -16,6 +16,7 @@ if __name__ == "__main__":
         from chronologer_app.native_dialog import main
         main()
     else:
+        print("Preparing the Chronologer inference engine... this may take a moment.", flush=True)
         import socket
         import threading
         import time

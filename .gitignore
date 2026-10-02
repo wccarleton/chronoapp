@@ -9,6 +9,7 @@ venv/
 build/
 dist/
 ChronoApp-win64-beta.zip
+Chronologer-*-win64.zip
 
 # Tests and tooling
 .pytest_cache/

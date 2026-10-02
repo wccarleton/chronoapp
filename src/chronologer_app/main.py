@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from . import __version__
 
 from .api.calibration import router
 from .api.projects import router as projects_router
@@ -19,7 +20,7 @@ async def lifespan(app):
     shutdown_jobs()
 
 
-app = FastAPI(title="Chronologer", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Chronologer", version=__version__, lifespan=lifespan)
 
 
 @app.middleware("http")
