@@ -20,6 +20,16 @@ keeping the machinery needed to fit the models out of the way.
 No Python installation is required. Download the ZIP, extract it, and
 double-click `ChronoApp.exe`.
 
+## Try it with example data
+
+No need to enter dates by hand: the Windows ZIP includes synthetic test data
+in `ChronoApp/docs/examples/`. Start with
+[`density-benchmark.csv`](docs/examples/density-benchmark.csv) (20 dates), or try
+[`trimodal-calendar.csv`](docs/examples/trimodal-calendar.csv) (60 dates) for mixture modelling.
+In the app, choose **Project → Import CSV**, then select a file.
+These are made-up datasets for trying the tools, not archaeological observations.
+See the [example guide](docs/examples/README.md) for suggested model settings.
+
 ## What can I do with it?
 
 ### Calibrate radiocarbon dates
