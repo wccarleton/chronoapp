@@ -1,6 +1,7 @@
 """Local development server for the Chronologer interface."""
 
 from pathlib import Path
+import sys
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -36,7 +37,8 @@ app.include_router(density_router, prefix="/api")
 app.include_router(project_files_router, prefix="/api")
 
 # Development layout: assets stay independent of the Python API package.
-frontend = Path(__file__).resolve().parents[2] / "frontend"
+frontend = (Path(sys._MEIPASS) if getattr(sys, "frozen", False)
+            else Path(__file__).resolve().parents[2]) / "frontend"
 app.mount("/", StaticFiles(directory=frontend, html=True), name="frontend")
 
 

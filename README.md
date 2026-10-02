@@ -1,5 +1,11 @@
 # Chronologer App
 
+**[Try the beta](https://github.com/wccarleton/chronoapp/releases/latest/download/ChronoApp-win64-beta.zip)** — Windows 64-bit
+
+1. Download the zip using **Try the beta**.
+2. Unzip it.
+3. Run `ChronoApp.exe` inside the extracted `ChronoApp` folder.
+
 Local browser interface for the sibling `chronologer` scientific package.
 
 Density fits show the posterior mean model density with its pointwise 95%
