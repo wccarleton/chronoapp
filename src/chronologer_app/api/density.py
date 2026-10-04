@@ -59,19 +59,9 @@ def fit_in_worker(request: dict, sampling: dict, progress_callback=None):
     process = 'observation' in request
     mixture = "events" in request
     if mixture:
-        from scipy.stats import norm, uniform
-        from chronologer.distributions import calrcarbon
+        from ..services.measurements import measurements
         rows = request['events']
-        observations = []
-        for row in rows:
-            p = row['parameters']
-            if row['distribution'] == 'calrcarbon':
-                curve = chronologer.load_calcurve(p['curve'], quiet=True)
-                observations.append(calrcarbon(curve, -p['c14_mean'], p['c14_err']))
-            elif row['distribution'] == 'normal':
-                observations.append(norm(-p['mean'], p['sd']))
-            else:
-                observations.append(uniform(-p['upper'], p['upper'] - p['lower']))
+        observations = measurements(rows)
         if process:
             window = request['observation']
             result = chronologer.models.ippp.gp(

@@ -418,6 +418,7 @@ class InteractivePlot {
 
 export function createSummaryPlot(container, result, title) {
   const process = result.model === 'ippp_gp';
+  const phase = result.model === 'phase';
   const curve = process ? { ...result.intensity, pdf_values: result.intensity.rate_values } : result.density;
   const { t_values: times, pdf_values: mean, lower_values: low, upper_values: high } = curve;
   if (!Array.isArray(times) || times.length < 2 || !times.every(Number.isFinite)
@@ -435,7 +436,7 @@ export function createSummaryPlot(container, result, title) {
   const note = `${modelNote} Dates are expressed in years using the BP1950 datum (before AD 1950). Where radiocarbon determinations are used, they are calibrated as part of modelling using each event’s selected calibration curve.`;
   container.append(element("h3", "", process ? 'Event intensity and posterior event dates · BP1950' : "Model density and posterior event dates · BP1950"));
   const plot = new InteractivePlot(container, {
-    title, subtitle: `${process ? 'GP IPPP' : result.model === "gaussian_mixture" ? "Gaussian mixture" : "Truncated-normal radiocarbon hierarchy"} · Years (BP1950)`, label: process ? 'Event intensity (events/year)' : "Model density (1/year)", base, height: 510,
+    title, subtitle: `${phase ? `${result.distribution === 'uniform' ? 'Uniform' : 'Normal'} phase` : process ? 'GP IPPP' : result.model === "gaussian_mixture" ? "Gaussian mixture" : "Truncated-normal radiocarbon hierarchy"} · Years (BP1950)`, label: process ? 'Event intensity (events/year)' : "Model density (1/year)", base, height: 510,
     xLabel: "Years (BP1950)", domainUnits: "years (BP1950)",
     visualLegend: { mean: process ? "Posterior mean event intensity" : "Posterior mean model density", events: Boolean(result.marginals?.events?.length) },
     exportNote: `${note} ${result.divergences} divergences.`,
@@ -473,7 +474,7 @@ export function createSummaryPlot(container, result, title) {
       title: `${title} — ${caption}`, subtitle: `Marginal posterior: ${parameter.name}`,
       label: process ? 'Posterior density' : "Posterior density / year", calendar: parameter.calendar, height: 190, base, interactive: false,
       xLabel: parameter.calendar ? "Years (BP1950)" : caption, domainUnits: parameter.calendar ? "years (BP1950)" : undefined,
-      exportNote: process ? 'Histogram of retained GP IPPP posterior draws.' : "Histogram of retained posterior draws. Location and scale are truncated-normal parameters, not the truncated distribution's actual moments.",
+      exportNote: phase ? 'Histogram of retained phase posterior draws. Scale is full width for uniform phases and sigma for normal phases.' : process ? 'Histogram of retained GP IPPP posterior draws.' : "Histogram of retained posterior draws. Location and scale are truncated-normal parameters, not the truncated distribution's actual moments.",
       domainApplied: domain => marginalPlot.setBase({ x: domain, y: base.y }),
       draw(group, x, y) {
         const points = times.map((t, i) => [x(t), y(values[i])]);
@@ -483,7 +484,7 @@ export function createSummaryPlot(container, result, title) {
     });
     plots.push(marginalPlot);
   }
-  if (result.marginals?.parameters?.length) container.append(element("p", "help", process ? 'Parameter panels show the baseline log rate, GP amplitude and temporal length scale, and the integrated intensity (expected count over the declared period).' : "Parameter panels show marginal posterior histograms. Location (μ) and scale (σ) describe the underlying normal; truncation can make the model’s actual mean and SD differ."));
+  if (result.marginals?.parameters?.length) container.append(element("p", "help", phase ? 'Parameter panels show phase center and full width (uniform) or mean and sigma (normal). Ordered downstream centers are derived from the selected quantiles and delta.' : process ? 'Parameter panels show the baseline log rate, GP amplitude and temporal length scale, and the integrated intensity (expected count over the declared period).' : "Parameter panels show marginal posterior histograms. Location (μ) and scale (σ) describe the underlying normal; truncation can make the model’s actual mean and SD differ."));
   return { dispose() { plots.forEach(p => p.dispose()); } };
 }
 

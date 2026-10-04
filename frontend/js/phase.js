@@ -1,6 +1,6 @@
 import { projectState as state } from "./project-state.js";
 
-// Visual profiles only. Future Chronologer adapters consume state.data.phases:
+// Visual profiles only. The inference adapter consumes state.data.phases:
 // { id, label, distribution, order, parameters }. No pixel positions or inferred
 // boundaries are part of a PhaseSpec. Add renderers here without changing cards.
 const profiles = {
@@ -95,6 +95,25 @@ export function initPhase() {
       });
       familyLabel.append(select);
       controls.append(nameLabel, familyLabel);
+      const members = () => (state.data?.events ?? []).filter(event => event.label === input.value).length;
+      const membership = node('p', 'help', `${members()} project events with this label`);
+      input.addEventListener('input', () => { membership.textContent = `${members()} project events with this label`; });
+      const priors = node('details', 'phase-priors');
+      priors.append(node('summary', '', 'Phase priors (optional)'));
+      for (const [key, caption] of Object.entries({ prior_center: 'Location prior mean · years (BP1950)', prior_scale: 'Location prior SD / reference time scale · years' })) {
+        const label = node('label', '', caption), field = node('input');
+        field.type = 'number'; field.step = 'any'; field.value = phase.parameters[key] ?? '';
+        field.placeholder = 'Auto from labelled measurements';
+        if (key === 'prior_scale') field.min = '0';
+        field.addEventListener('input', () => {
+          const current = specs().find(item => item.id === phase.id);
+          update(phase.id, { parameters: { ...current.parameters, [key]: field.value === '' ? null : Number(field.value) } });
+        });
+        label.append(field); priors.append(label);
+      }
+      const remove = node('button', 'button secondary', 'Remove phase'); remove.type = 'button';
+      remove.addEventListener('click', () => { commit(specs().filter(item => item.id !== phase.id)); render(); });
+      controls.append(membership, priors, remove);
       card.append(grip, node("span", "phase-order", String(phase.order + 1)), controls, density(phase.distribution));
       list.append(card);
     }

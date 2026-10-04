@@ -1,6 +1,7 @@
 import { initCalibration } from "./calibrate.js";
 import { initProject } from "./project.js";
 import { initPhase } from "./phase.js";
+import { initPhaseRun } from "./phase-run.js";
 import { initSummarize } from "./summarize.js?v=job-monitor-2";
 import { initJobs } from "./jobs.js?v=job-monitor-2";
 
@@ -33,6 +34,7 @@ document.getElementById("back-to-calibrate")?.addEventListener("click", () => {
 await initProject();
 initJobs();
 initPhase();
+initPhaseRun();
 initSummarize();
 initSummarize({ process: true });
 initCalibration();

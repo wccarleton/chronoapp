@@ -33,6 +33,7 @@ class ProjectState extends EventTarget {
   removeEvent(index) { this.setEvents(this.data.events.filter((_, i) => i !== index)); }
   setSummaries(summaries) { this.edit(data => { data.summaries = structuredClone(summaries); }); }
   setProcesses(processes) { this.edit(data => { data.processes = structuredClone(processes); }); }
+  setPhaseModel(model) { this.edit(data => { data.phase_model = structuredClone(model); }); }
   // Future inference adapters consume these semantic specs, never canvas pixels.
   setPhases(phases) {
     this.edit(data => { data.phases = structuredClone(phases).map((phase, order) => ({ ...phase, order })); });

@@ -18,7 +18,8 @@ A `.chrono` file is one ZIP archive containing:
 ```text
 project.json
 data/events.json
-data/phases.json      # optional ordered phase specifications (UI prototype)
+data/phases.json      # optional ordered phase specifications
+data/phase_model.json # optional phase run settings and latest saved output
 data/summaries.json   # optional summary specifications and input snapshots
 data/source.csv       # optional original UTF-8 CSV, including BOM/newlines
 data/source.json      # optional original source filename, paired with source.csv
@@ -84,24 +85,42 @@ CSV import is limited to 16 MiB. Archives
 are read in memory, never extracted. Only JSON and CSV are used: no pickle,
 executable model objects, compiler caches, or application-installation writes.
 
-## Phase prototype
+## Phase model
 
 The optional `phases` list is stored in `data/phases.json` without changing
 format version 1. Existing files without this entry load unchanged. Each spec
 contains a stable UUID-based `id`, editable `label`, `distribution` (`uniform`
-or `normal`), contiguous zero-based `order`, and a reserved JSON `parameters`
+or `normal`), contiguous zero-based `order`, and a JSON `parameters`
 object. IDs must be unique. Up to 100 phases are supported. List position and
 order must agree; pixel positions are never serialized.
 
 `frontend/js/phase.js` renders schematic vertical density profiles and handles
 drag ordering. The profile registry is the renderer extension point;
-`projectState.setPhases()` is the semantic state boundary for a future
-Chronologer translation layer. It does not invoke the engine. Saved order remains
+`projectState.setPhases()` is the semantic state boundary. The separate
+`phase-run.js` panel submits the current model to `/api/phases/jobs`. Saved order remains
 oldest-first; the canvas displays it bottom-to-top so older is deeper. This also
-preserves the meaning of existing saved phases. There are no inferred boundaries, durations, overlap
-constraints, or event membership. Escape cancels dragging, and focused grips
+preserves the meaning of existing saved phases. Block size and spacing do not
+define durations or separations. Event membership uses exact equality between
+the project's event label and the phase label. Escape cancels dragging, and focused grips
 support arrow-key ordering. Project New/Open replaces phases; CSV imports keep
 them. Saving and reopening preserves IDs, names, distributions, and order.
+
+The optional `phase_model` object is stored in `data/phase_model.json`. It has
+`parameters` and optionally `saved_run`. Parameters contain `anchors` (`center`,
+`end_start`, or `none`), `delta_scale` (positive years or null for engine defaults),
+and the shared MCMC `sampling` settings. End/start anchors use 1/0 for uniform
+phases and .95/.05 for normal phases; center anchors use .5/.5. Adjacent cards
+form the oldest-to-youngest chain. Phase-specific optional `prior_center`
+(BP1950) and `prior_scale` (years) live in each card's parameters. Conversion to
+native negative BP happens only in the service adapter.
+
+Saved phase runs retain labelled event copies, phase specifications, settings,
+per-phase density arrays, quantile estimates, positive delta estimates, event
+and parameter marginal histograms, diagnostics and posterior metadata. Full
+chains are excluded. Scientific input edits hide mismatched outputs but retain
+the snapshot; **View saved run** displays it explicitly as historical inputs
+without replacing the current project data. Inference uses isolated workers
+with the shared progress, cancellation, resolved-core and log handling.
 
 Verification: **55 app tests passed, 1 existing Starlette warning in 13.84s**.
 The browser acceptance check added three phases, renamed them Early/Late/Middle,

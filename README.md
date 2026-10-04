@@ -96,8 +96,11 @@ Currently implemented:
 - CSV import
 - Windows distribution requiring no Python installation
 
-The **Phase** workspace is currently an interface prototype for future
-phase modelling. **Depth** is reserved for future age-depth models.
+The **Phase** workspace fits uniform or normal phase distributions using each
+event’s project label for membership. Arrange the phase cards, choose ordering
+anchors in **Run phase model**, and fit to obtain phase densities, derived
+quantile intervals, anchor separations and MCMC diagnostics. Results are retained
+when saving the project. **Depth** is reserved for future age-depth models.
 
 ## A note on modelling philosophy
 

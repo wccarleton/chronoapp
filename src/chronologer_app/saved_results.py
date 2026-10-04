@@ -30,18 +30,45 @@ def validate_saved_run(run):
         require(timestamp.tzinfo is not None, 'timestamp timezone')
     except (AttributeError, TypeError, ValueError):
         raise ValueError('Invalid saved Summary result: timestamp') from None
-    require(run['model'] in ('density', 'mixture', 'ippp_gp') and isinstance(run['parameters'], dict), 'model/settings')
+    require(run['model'] in ('density', 'mixture', 'ippp_gp', 'phase') and isinstance(run['parameters'], dict), 'model/settings')
     process = run['model'] == 'ippp_gp'
+    phase = run['model'] == 'phase'
     require(isinstance(run['events'], list) and 1 <= len(run['events']) <= 100, 'events')
     require(all(isinstance(e, dict) for e in run['events']), 'event records')
     r = run['result']
-    curve_key = 'intensity' if process else 'density'
+    curve_key = 'phases' if phase else 'intensity' if process else 'density'
     fields = {'model', 'coordinate_system', curve_key, 'marginals', 'posterior', 'sampling', 'divergences', 'warnings', 'elapsed_seconds'}
     require(isinstance(r, dict) and fields <= set(r) and not set(r) - fields - {'diagnostics', 'mcmc'}, 'result fields (raw samples are not supported)')
-    require(r['model'] == ('ippp_gp' if process else 'gaussian_mixture' if run['model'] == 'mixture' else 'truncated_normal_hierarchy') and r['coordinate_system'] == 'negative_bp', 'model/coordinates')
-    require(isinstance(r[curve_key], dict), 'curve arrays')
+    require(r['model'] == ('phase' if phase else 'ippp_gp' if process else 'gaussian_mixture' if run['model'] == 'mixture' else 'truncated_normal_hierarchy') and r['coordinate_system'] == 'negative_bp', 'model/coordinates')
+    require(isinstance(r[curve_key], list if phase else dict), 'curve arrays')
     curve = r[curve_key]
-    if process:
+    if phase:
+        from .api.phases import PhaseRequest
+        params = run['parameters']
+        require(set(params) == {'phases', 'anchors', 'delta_scale', 'sampling'}, 'phase settings')
+        try:
+            request = PhaseRequest(events=run['events'], phases=params['phases'],
+                                   settings={k: params[k] for k in ('anchors', 'delta_scale')},
+                                   sampling=params['sampling'])
+        except ValueError:
+            require(False, 'phase input snapshot')
+        require(len(curve) == len(request.phases), 'phase count')
+        for item, spec in zip(curve, request.phases):
+            require(isinstance(item, dict) and set(item) == {'label', 'distribution', 'density', 'interval', 'parameters'}, 'phase plot fields')
+            require(item['label'] == spec.label and item['distribution'] == spec.distribution, 'phase identity')
+            require(isinstance(item['density'], dict) and set(item['density']) == {'t_values', 'pdf_values', 'lower_values', 'upper_values'}, 'phase density fields')
+            arrays(item['density'], band=True, strict=True)
+            interval = item['interval']
+            p, q = (0., 1.) if spec.distribution == 'uniform' else (.05, .95)
+            require(isinstance(interval, dict) and set(interval) == {'p', 'q', 'lower', 'upper'} and interval['p'] == p and interval['q'] == q, 'phase interval')
+            for estimate in (interval['lower'], interval['upper']):
+                require(isinstance(estimate, dict) and set(estimate) == {'mean', 'lower', 'upper'} and all(number(v) for v in estimate.values()) and estimate['lower'] <= estimate['upper'], 'phase quantile estimate')
+            require(interval['lower']['mean'] <= interval['upper']['mean'], 'phase interval order')
+            require(isinstance(item['parameters'], list) and len(item['parameters']) == 2, 'phase marginals')
+            for j, parameter in enumerate(item['parameters']):
+                require(isinstance(parameter, dict) and set(parameter) == {'name', 'label', 'calendar', 't_values', 'pdf_values'} and parameter['name'] == ('mu' if j == 0 else 'scale') and parameter['calendar'] is (j == 0) and isinstance(parameter['label'], str), 'phase parameter')
+                arrays(parameter)
+    elif process:
         require(set(curve) == {'t_values', 'rate_values', 'lower_values', 'upper_values'}, 'intensity fields')
         arrays({**curve, 'pdf_values': curve['rate_values']}, band=True, strict=True)
     else:
@@ -62,7 +89,7 @@ def validate_saved_run(run):
             and all(type(v) is int and v > 0 for v in posterior['sizes'].values()), 'posterior structure')
     marginals = r['marginals']
     require(isinstance(marginals, dict) and set(marginals) == {'parameters', 'events'}, 'marginals')
-    names = ['log_rate', 'amplitude', 'length_scale', 'integrated_intensity'] if process else [] if run['model'] == 'mixture' else ['tau_mu', 'tau_sd']
+    names = ['log_rate', 'amplitude', 'length_scale', 'integrated_intensity'] if process else [] if phase or run['model'] == 'mixture' else ['tau_mu', 'tau_sd']
     require(isinstance(marginals['parameters'], list) and len(marginals['parameters']) == len(names), 'parameter marginals')
     for i, p in enumerate(marginals['parameters']):
         require(isinstance(p, dict) and set(p) == {'name', 'label', 'calendar', 't_values', 'pdf_values'}, 'parameter fields')
@@ -75,7 +102,15 @@ def validate_saved_run(run):
         arrays(e)
     diagnostics = r.get('diagnostics', {})
     require(isinstance(diagnostics, dict), 'diagnostics')
-    if process:
+    if phase:
+        from .services.phases import specification
+        _, orders = specification(request.model_dump())
+        require(set(diagnostics) == {'deltas'} and isinstance(diagnostics['deltas'], list) and len(diagnostics['deltas']) == len(orders), 'phase delta count')
+        for item, order in zip(diagnostics['deltas'], orders):
+            require(isinstance(item, dict) and set(item) == {'before', 'after', 'anchors', 'mean', 'lower', 'upper'}, 'phase delta fields')
+            require(item['before'] == order.before and item['after'] == order.after and item['anchors'] == list(order.anchors), 'phase delta identity')
+            require(all(number(item[k]) and item[k] > 0 for k in ('mean', 'lower', 'upper')) and item['lower'] <= item['upper'], 'phase delta estimates')
+    elif process:
         require(set(diagnostics) == {'start', 'end', 'grid_size', 'baseline_count', 'log_rate_sd', 'amplitude_scale', 'length_scale_median', 'length_scale_log_sd'}, 'GP specification')
         require(all(number(v) for v in diagnostics.values()), 'finite GP specification')
         require(diagnostics['start'] < diagnostics['end'], 'observation period')

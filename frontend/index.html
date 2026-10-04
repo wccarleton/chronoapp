@@ -26,7 +26,7 @@
       <button id="project-tab" role="tab" aria-selected="true" aria-controls="project-panel" tabindex="0">Project</button>
       <button id="calibrate-tab" role="tab" aria-selected="false" aria-controls="calibrate-panel" tabindex="-1">Calibrate</button>
       <button id="summarize-tab" role="tab" aria-selected="false" aria-controls="summarize-panel" tabindex="-1">Summarize</button>
-      <button id="phase-tab" role="tab" aria-selected="false" aria-controls="phase-panel" tabindex="-1">Phase <span class="tag">Preview</span></button>
+      <button id="phase-tab" role="tab" aria-selected="false" aria-controls="phase-panel" tabindex="-1">Phase</button>
       <button id="depth-tab" role="tab" aria-selected="false" aria-controls="depth-panel" tabindex="-1">Depth <span class="tag">Preview</span></button>
       <button id="process-tab" role="tab" aria-selected="false" aria-controls="process-panel" tabindex="-1">Process Lab <span class="tag">Benchmark</span></button>
     </nav>
@@ -113,10 +113,10 @@
         </section>
       </section>
       <section id="phase-panel" role="tabpanel" aria-labelledby="phase-tab" hidden>
-        <div class="workspace-heading"><div><h1>Phase</h1><p class="phase-gloss"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M5 3h14l-2 7c-1 3-3 4-5 4s-4-1-5-4L5 3Zm7 11v6m-5 1h10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg><strong>Phases are scientific assertions about how events are distributed through time. Choose wisely.</strong></p></div><span class="tag">UI prototype</span></div>
+        <div class="workspace-heading"><div><h1>Phase</h1><p class="phase-gloss"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M5 3h14l-2 7c-1 3-3 4-5 4s-4-1-5-4L5 3Zm7 11v6m-5 1h10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg><strong>Phases are scientific assertions about how events are distributed through time. Choose wisely.</strong></p></div></div>
         <section class="panel phase-workspace">
           <div class="phase-toolbar"><button id="add-phase" class="button secondary" type="button">+ Phase</button><span class="help">Older is deeper: younger ↑ / older ↓. Drag the grip to reorder; use ↑ / ↓ on a focused grip.</span></div>
-          <p class="help">Order is an assertion, not a fitted chronology. Block height and spacing do not specify durations or gaps. No inference or event membership is applied.</p>
+          <p class="help">Each phase name must match its events’ label in Project. Order is an assertion, not a fitted chronology. Block height and spacing do not specify durations or gaps. Choose how the order applies in the run controls below.</p>
           <div id="phase-canvas" class="phase-canvas" role="region" aria-label="Vertical phase chronology, older at bottom" tabindex="0">
             <span class="phase-time-label">Younger ↑</span>
             <p id="phase-empty" class="compact-empty">Add a phase to begin shaping your chronology.</p>
@@ -125,6 +125,7 @@
           </div>
           <p id="phase-status" class="help" role="status" aria-live="polite"></p>
         </section>
+        <section id="phase-run" class="panel phase-workspace" aria-label="Phase model run"></section>
       </section>
       <section id="depth-panel" role="tabpanel" aria-labelledby="depth-tab" hidden>
         <div class="workspace-heading"><div><h1>Depth</h1><p>Age–depth modelling.</p></div><span class="tag">Preview</span></div>

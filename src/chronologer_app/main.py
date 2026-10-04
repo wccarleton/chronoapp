@@ -12,6 +12,7 @@ from .api.calibration import router
 from .api.projects import router as projects_router
 from .api.density import router as density_router
 from .api.project_files import router as project_files_router
+from .api.phases import router as phase_router
 from .services.jobs import shutdown_jobs
 
 @asynccontextmanager
@@ -36,6 +37,7 @@ app.include_router(router, prefix="/api")
 app.include_router(projects_router, prefix="/api")
 app.include_router(density_router, prefix="/api")
 app.include_router(project_files_router, prefix="/api")
+app.include_router(phase_router, prefix="/api")
 
 # Development layout: assets stay independent of the Python API package.
 frontend = (Path(sys._MEIPASS) if getattr(sys, "frozen", False)

@@ -36,7 +36,7 @@ def _text(value, label, limit=120):
 
 
 def validate_project(project):
-    if not isinstance(project, dict) or not {"metadata", "events", "source_csv"} <= set(project) or set(project) - {"metadata", "events", "source_csv", "phases", "summaries", "processes"}:
+    if not isinstance(project, dict) or not {"metadata", "events", "source_csv"} <= set(project) or set(project) - {"metadata", "events", "source_csv", "phases", "phase_model", "summaries", "processes"}:
         raise ValueError("Project must contain metadata, events, and source_csv.")
     meta = project["metadata"]
     if not isinstance(meta, dict):
@@ -104,6 +104,22 @@ def validate_project(project):
             raise ValueError("Phase order must match its zero-based list position.")
         if not isinstance(phase["parameters"], dict):
             raise ValueError("Phase parameters must be a JSON object.")
+    if 'phase_model' in project:
+        from .api.phases import PhaseSettings
+        model = project['phase_model']
+        if not isinstance(model, dict) or not {'parameters'} <= set(model) or set(model) - {'parameters', 'saved_run'}:
+            raise ValueError('Phase model requires parameters and an optional saved_run.')
+        params = model['parameters']
+        if not isinstance(params, dict) or set(params) - {'anchors', 'delta_scale', 'sampling'}:
+            raise ValueError('Invalid phase model parameters.')
+        PhaseSettings(**{k: v for k, v in params.items() if k != 'sampling'})
+        validate_saved_sampling(params)
+        if 'saved_run' in model:
+            validate_saved_run(model['saved_run'])
+            if model['saved_run']['model'] != 'phase':
+                raise ValueError('Phase workspace requires a saved phase model.')
+            validate_project({'metadata': meta, 'events': model['saved_run']['events'], 'source_csv': None,
+                              'phases': model['saved_run']['parameters']['phases']})
     summaries = project.get("summaries", [])
     if not isinstance(summaries, list) or len(summaries) > 100:
         raise ValueError("Summaries must be a list of at most 100 specifications.")
@@ -217,6 +233,8 @@ def dump_project(project) -> bytes:
         archive.writestr("data/events.json", encode(project["events"]))
         if "phases" in project:
             archive.writestr("data/phases.json", encode(project["phases"]))
+        if 'phase_model' in project:
+            archive.writestr('data/phase_model.json', encode(project['phase_model']))
         if "summaries" in project:
             archive.writestr("data/summaries.json", encode(project["summaries"]))
         if 'processes' in project:
@@ -235,7 +253,7 @@ def load_project(content: bytes):
             infos = archive.infolist()
             names = [item.filename for item in infos]
             required = {"project.json", "data/events.json"}
-            allowed = required | {"data/source.csv", "data/source.json", "data/phases.json", "data/summaries.json", 'data/processes.json'}
+            allowed = required | {"data/source.csv", "data/source.json", "data/phases.json", "data/phase_model.json", "data/summaries.json", 'data/processes.json'}
             if (len(names) != len(set(names)) or not required <= set(names)
                     or set(names) - allowed or sum(item.file_size for item in infos) > MAX_BYTES):
                 raise ValueError("Invalid project archive entries or expanded size exceeds 64 MiB.")
@@ -255,6 +273,8 @@ def load_project(content: bytes):
             project = {"metadata": meta, "events": read_json("data/events.json"), "source_csv": source}
             if "data/phases.json" in names:
                 project["phases"] = read_json("data/phases.json")
+            if 'data/phase_model.json' in names:
+                project['phase_model'] = read_json('data/phase_model.json')
             if "data/summaries.json" in names:
                 project["summaries"] = read_json("data/summaries.json")
             if 'data/processes.json' in names:

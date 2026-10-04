@@ -658,6 +658,9 @@ select {
 .phase-distribution option { background:#fcfdfd; color:var(--ink); }
 [data-theme=dark] .phase-distribution option { background:#19242c; }
 .phase-density { width:80px; height:120px; }
+.phase-estimates { width:100%; border-collapse:collapse; font-size:12px; }
+.phase-estimates th, .phase-estimates td { text-align:left; padding:8px; border-bottom:1px solid var(--line); }
+.phase-result { margin-top:24px; }
 .summary-card { margin-top:18px; padding:18px; border:1px solid var(--line); border-radius:6px; }
 #summary-list { max-height:70vh; overflow:auto; }
 .summary-events, .summary-choices { max-height:220px; overflow:auto; padding:0; list-style:none; }
