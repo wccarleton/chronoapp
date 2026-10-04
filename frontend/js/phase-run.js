@@ -3,6 +3,7 @@ import { runDensity } from './jobs.js?v=job-monitor-2';
 import { createSummaryPlot } from './plots.js';
 import { createMcmcDiagnostics } from './mcmc-diagnostics.js';
 import { DEFAULT_SAMPLING, samplingFor, samplingError, samplingControls } from './sampling-settings.js';
+import { phaseSettings, phaseCopy, anchorError } from './phase-settings.js';
 
 function node(tag, text, className) {
   const element = document.createElement(tag);
@@ -16,8 +17,8 @@ function button(text, action) {
 }
 const eventCopy = event => ({ id: event.id, label: event.label, distribution: event.distribution,
   parameters: event.parameters, datum: event.datum ?? 'BP1950' });
-const settingsFor = spec => ({ anchors: spec.parameters.anchors ?? 'center', delta_scale: spec.parameters.delta_scale ?? null });
-const savedSignature = saved => JSON.stringify({ phases: saved.parameters.phases, events: saved.events,
+const settingsFor = spec => phaseSettings(spec.parameters);
+const savedSignature = saved => JSON.stringify({ phases: saved.parameters.phases.map(phase => phaseCopy(phase, saved.parameters)), events: saved.events.map(eventCopy),
   settings: settingsFor(saved), sampling: saved.parameters.sampling });
 const number = value => value.toLocaleString(undefined, { maximumFractionDigits: 1 });
 
@@ -27,7 +28,7 @@ export function initPhaseRun() {
   let projectDocument = state.data, running = null, ownChange = false, viewSaved = false, message = '';
   let plots = [], output;
   function payload() {
-    const phases = state.data?.phases ?? [];
+    const phases = (state.data?.phases ?? []).map(phase => phaseCopy(phase, spec().parameters));
     const labels = new Set(phases.map(phase => phase.label));
     return { phases, events: (state.data?.events ?? []).filter(event => labels.has(event.label)).map(eventCopy),
       settings: settingsFor(spec()), sampling: samplingFor(spec()) };
@@ -45,6 +46,10 @@ export function initPhaseRun() {
     if (!data.phases.length) return 'Add phases above before fitting.';
     const labels = data.phases.map(phase => phase.label);
     if (labels.some(label => !label.trim()) || new Set(labels).size !== labels.length) return 'Phase names must be nonempty and unique.';
+    for (const phase of data.phases) {
+      const problem = anchorError(phase);
+      if (problem) return `${phase.label}: ${problem}`;
+    }
     const empty = labels.filter(label => !data.events.some(event => event.label === label));
     if (empty.length) return `No matching event labels for: ${empty.join(', ')}. Edit the names above or the labels in Project.`;
     if (data.events.length > 100) return 'This phase model currently supports at most 100 matching events.';
@@ -98,18 +103,12 @@ export function initPhaseRun() {
     const excluded = (state.data?.events.length ?? 0) - data.events.length;
     panel.append(node('p', `${data.phases.length} phases · ${data.events.length} matching events · ${excluded} project events outside these phase labels. Membership uses exact labels; calibration selection is separate.`, 'help'));
     const fields = node('div', undefined, 'phase-fields');
-    const orderLabel = node('label', 'Apply the card order using');
-    const anchors = node('select'); anchors.id = 'phase-anchors';
-    for (const [value, text] of Object.entries({ center: 'Centers (50% → 50%)', end_start: 'End → start (uniform limits / normal 95% → 5%)', none: 'Independent phases · no ordering' })) anchors.append(new Option(text, value));
-    anchors.value = data.settings.anchors;
-    anchors.addEventListener('change', () => update({ anchors: anchors.value }));
-    orderLabel.append(anchors); fields.append(orderLabel);
     const deltaLabel = node('label', 'Delta prior scale · years');
     const delta = node('input'); delta.type = 'number'; delta.step = 'any'; delta.min = '0'; delta.id = 'phase-delta-scale';
     delta.value = data.settings.delta_scale ?? ''; delta.placeholder = 'Auto from phase prior time scales';
     delta.addEventListener('input', () => update({ delta_scale: delta.value === '' ? null : Number(delta.value) }));
     deltaLabel.append(delta); fields.append(deltaLabel); panel.append(fields);
-    panel.append(node('p', 'Adjacent cards define an oldest-to-youngest chain using the selected quantiles. Delta has a positive half-normal prior; it measures anchor separation and is a phase gap only for end-to-start ordering. Downstream locations are derived; only chain roots retain independent location priors.', 'help'));
+    panel.append(node('p', 'When card ordering is enabled, adjacent phases connect the older phase’s younger (or sole) anchor to the younger phase’s older anchor. Delta has a positive half-normal prior; it measures anchor separation and is a phase gap only for end-to-start ordering. Downstream locations are derived; only chain roots retain independent location priors.', 'help'));
     panel.append(node('p', 'Blank phase priors use the labelled measurements: location mean = mean measurement centers; reference time scale = max(center range, median measurement SD). Positive scale has a log-normal prior with log SD 0.75 and reference sigma 0.2 × time scale (uniform width = √12 × reference sigma). Auto delta scale uses the larger time scale of adjacent phases. Review priors for your model.', 'help'));
     panel.append(samplingControls(data.sampling, sampling => update({ sampling })));
     const status = node('p', running ? 'Inference submitted. Progress, cancellation and messages are above the tabs.' : message || error(data) || '', 'help');

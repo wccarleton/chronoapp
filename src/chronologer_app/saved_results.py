@@ -45,10 +45,12 @@ def validate_saved_run(run):
     if phase:
         from .api.phases import PhaseRequest
         params = run['parameters']
-        require(set(params) == {'phases', 'anchors', 'delta_scale', 'sampling'}, 'phase settings')
+        require({'phases', 'delta_scale', 'sampling'} <= set(params)
+                and bool({'anchors', 'ordered'} & set(params))
+                and not set(params) - {'phases', 'anchors', 'ordered', 'delta_scale', 'sampling'}, 'phase settings')
         try:
             request = PhaseRequest(events=run['events'], phases=params['phases'],
-                                   settings={k: params[k] for k in ('anchors', 'delta_scale')},
+                                   settings={k: params[k] for k in ('anchors', 'ordered', 'delta_scale') if k in params},
                                    sampling=params['sampling'])
         except ValueError:
             require(False, 'phase input snapshot')

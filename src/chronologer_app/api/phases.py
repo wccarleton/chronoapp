@@ -9,6 +9,7 @@ from .calibration import require_local_curve
 from ..sampling import SamplingSettings
 from ..services.jobs import get_jobs
 from ..services.phases import fit_in_worker
+from ..phase_settings import validate_anchors
 
 router = APIRouter()
 
@@ -30,11 +31,18 @@ class PhaseSpec(BaseModel):
     distribution: Literal['uniform', 'normal']
     order: int = Field(strict=True, ge=0)
     parameters: Priors = Field(default_factory=Priors)
+    anchors: list[Finite] | None = Field(default=None, min_length=1, max_length=2)
+
+    @model_validator(mode='after')
+    def valid_anchors(self):
+        validate_anchors(self.model_dump())
+        return self
 
 
 class PhaseSettings(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    anchors: Literal['center', 'end_start', 'none'] = 'center'
+    anchors: Literal['center', 'end_start', 'none'] | None = None  # Legacy preset only.
+    ordered: bool | None = Field(default=None, strict=True)
     delta_scale: Positive | None = None
 
 

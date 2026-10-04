@@ -13,6 +13,7 @@ from . import __version__
 from chronologer.calcurves import DEFAULT_CURVES
 from .saved_results import validate_saved_run
 from .sampling import validate_saved_sampling
+from .phase_settings import validate_anchors
 
 MAX_BYTES = 64 * 1024 * 1024
 MAX_CSV_BYTES = 16 * 1024 * 1024
@@ -91,7 +92,8 @@ def validate_project(project):
         raise ValueError("Phases must be a list of at most 100 specifications.")
     phase_ids = set()
     for index, phase in enumerate(phases):
-        if not isinstance(phase, dict) or set(phase) != {"id", "label", "distribution", "order", "parameters"}:
+        if (not isinstance(phase, dict) or not {"id", "label", "distribution", "order", "parameters"} <= set(phase)
+                or set(phase) - {"id", "label", "distribution", "order", "parameters", "anchors"}):
             raise ValueError("Each phase requires id, label, distribution, order, and parameters.")
         _text(phase["id"], "Phase ID")
         _text(phase["label"], "Phase label")
@@ -104,13 +106,14 @@ def validate_project(project):
             raise ValueError("Phase order must match its zero-based list position.")
         if not isinstance(phase["parameters"], dict):
             raise ValueError("Phase parameters must be a JSON object.")
+        validate_anchors(phase)
     if 'phase_model' in project:
         from .api.phases import PhaseSettings
         model = project['phase_model']
         if not isinstance(model, dict) or not {'parameters'} <= set(model) or set(model) - {'parameters', 'saved_run'}:
             raise ValueError('Phase model requires parameters and an optional saved_run.')
         params = model['parameters']
-        if not isinstance(params, dict) or set(params) - {'anchors', 'delta_scale', 'sampling'}:
+        if not isinstance(params, dict) or set(params) - {'anchors', 'ordered', 'delta_scale', 'sampling'}:
             raise ValueError('Invalid phase model parameters.')
         PhaseSettings(**{k: v for k, v in params.items() if k != 'sampling'})
         validate_saved_sampling(params)

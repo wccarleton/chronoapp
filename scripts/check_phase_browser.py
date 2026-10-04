@@ -76,6 +76,10 @@ async def main():
                     project.phases=['Early','Late'].map((label,order)=>({id:'p'+order,label,order,distribution:order?'normal':'uniform',parameters:{}}));
                     project.phase_model={parameters:{anchors:'end_start',delta_scale:100,sampling:{draws:4,tune:4,chains:1,cores:1}}};
                     state.replace(project); document.querySelector('#phase-tab').click();
+                    if(document.querySelector('#phase-anchors'))throw Error('Model-wide anchors still in run controls');
+                    const olderCard=document.querySelector('[data-phase-id="p0"]');
+                    const youngerCard=document.querySelector('[data-phase-id="p1"]');
+                    if(olderCard.querySelector('.phase-anchor').value!=='0' || youngerCard.querySelector('.phase-anchor-younger').value!=='0.95')throw Error('Legacy anchors were not interpreted');
                     window.finished=false; window.submitted=null; window.originalFetch=window.fetch;
                     const density={t_values:[-2600,-2400,-2100],pdf_values:[.001,.003,.001],lower_values:[0,.001,0],upper_values:[.002,.005,.002]};
                     const estimate=mean=>({mean,lower:mean-10,upper:mean+10});
@@ -85,7 +89,7 @@ async def main():
                       phases:project.phases.map(p=>({label:p.label,distribution:p.distribution,density,
                         interval:{p:p.distribution==='uniform'?0:.05,q:p.distribution==='uniform'?1:.95,lower:estimate(-2550),upper:estimate(-2400)},parameters:[parameter('mu',true),parameter('scale',false)]})),
                       marginals:{parameters:[],events:[{id:'a',index:0,t_values:[-2530,-2500,-2470],pdf_values:[0,.03,0]},{id:'b',index:1,t_values:[-2230,-2200,-2170],pdf_values:[0,.03,0]}]},
-                      diagnostics:{deltas:[{before:'Early',after:'Late',anchors:[1,.05],...estimate(100)}]}};
+                      diagnostics:{deltas:[{before:'Early',after:'Late',anchors:[.25,.2],...estimate(100)}]}};
                     const job=()=>({id:'phase-mock',label:'Phase model',status:finished?'completed':'running',stage:finished?'Completed':'Sampling',elapsed_seconds:1,total:8,completed:finished?8:4});
                     window.fetch=async(url,options)=>{
                       let data;
@@ -96,12 +100,20 @@ async def main():
                       else return originalFetch(url,options);
                       return new Response(JSON.stringify(data),{headers:{'Content-Type':'application/json'}});
                     };
+                    const setAnchor=(card,selector,value)=>{const input=card.querySelector(selector);input.value=value;input.dispatchEvent(new Event('input',{bubbles:true}));};
+                    setAnchor(youngerCard,'.phase-anchor-younger','.05');
+                    document.querySelector('#fit-phase').click();
+                    if(submitted || !document.querySelector('#phase-fit-status').textContent.includes('exceed'))throw Error('Equal anchors not rejected');
+                    setAnchor(youngerCard,'.phase-anchor','.2');setAnchor(youngerCard,'.phase-anchor-younger','.9');
+                    setAnchor(olderCard,'.phase-anchor','.25');setAnchor(olderCard,'.phase-anchor-younger','');
                     document.querySelector('#fit-phase').click();""")
                 await wait("!!submitted && !!document.querySelector('.run-cancel')")
-                assert await js("submitted.events.length===2 && submitted.phases[0].label==='Early' && submitted.settings.anchors==='end_start'")
+                assert await js("submitted.events.length===2 && submitted.phases[0].label==='Early' && submitted.settings.ordered && submitted.phases[0].anchors.length===1 && submitted.phases[0].anchors[0]===.25 && submitted.phases[1].anchors[0]===.2 && submitted.phases[1].anchors[1]===.9")
                 await js('finished=true')
                 await wait("!!state.data.phase_model.saved_run && document.querySelectorAll('#phase-output .phase-result').length===2")
                 assert await js("document.querySelector('#phase-output').innerText.includes('Anchor separations') && document.querySelectorAll('#phase-output svg').length>=2")
+                await js("const anchor=document.querySelector('[data-phase-id=\"p1\"] .phase-anchor');anchor.value='.3';anchor.dispatchEvent(new Event('input',{bubbles:true}))")
+                assert await js("document.querySelectorAll('#phase-output .phase-result').length===0 && state.data.phase_model.saved_run.parameters.phases[1].anchors[0]===.2")
                 await js("state.updateEvent(0,{parameters:{mean:2510,sd:20}})")
                 assert await js("document.querySelectorAll('#phase-output .phase-result').length===0 && !!state.data.phase_model.saved_run")
                 await js("[...document.querySelectorAll('#phase-run button')].find(b=>b.textContent==='View saved run').click()")
@@ -114,7 +126,7 @@ async def main():
                     const restored=await decoded.json();state.replace(restored);
                     restored.phase_model.saved_run.events[0].parameters.mean===2500 && restored.events[0].parameters.mean===2510""")
                 assert not errors, errors
-                print('PASS: labelled phase submission, global run controls, plots, stale-result invalidation, saved-run viewing and archive roundtrip. No MCMC.')
+                print('PASS: per-card anchors, validation, legacy presets, labelled submission, plots, anchor/date invalidation, saved-run viewing and archive roundtrip. No MCMC.')
         finally:
             for process in (browser, server):
                 if process:

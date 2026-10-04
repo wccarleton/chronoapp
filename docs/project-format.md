@@ -94,6 +94,12 @@ or `normal`), contiguous zero-based `order`, and a JSON `parameters`
 object. IDs must be unique. Up to 100 phases are supported. List position and
 order must agree; pixel positions are never serialized.
 
+Each card can also contain `anchors`, a list of one or two quantile probabilities.
+One anchor serves both incoming and outgoing relationships. With two, the first
+is older and the second younger, so the first must be strictly smaller. Uniform
+anchors allow 0 and 1; normal anchors must lie strictly between them. These are
+distribution quantiles, not fitted boundary parameters.
+
 `frontend/js/phase.js` renders schematic vertical density profiles and handles
 drag ordering. The profile registry is the renderer extension point;
 `projectState.setPhases()` is the semantic state boundary. The separate
@@ -106,13 +112,18 @@ support arrow-key ordering. Project New/Open replaces phases; CSV imports keep
 them. Saving and reopening preserves IDs, names, distributions, and order.
 
 The optional `phase_model` object is stored in `data/phase_model.json`. It has
-`parameters` and optionally `saved_run`. Parameters contain `anchors` (`center`,
-`end_start`, or `none`), `delta_scale` (positive years or null for engine defaults),
-and the shared MCMC `sampling` settings. End/start anchors use 1/0 for uniform
-phases and .95/.05 for normal phases; center anchors use .5/.5. Adjacent cards
-form the oldest-to-youngest chain. Phase-specific optional `prior_center`
+`parameters` and optionally `saved_run`. Parameters contain `ordered` (boolean),
+`delta_scale` (positive years or null for engine defaults), and the shared MCMC
+`sampling` settings. Ordering is toggled in the model builder. Adjacent cards
+connect the older phase's younger (or sole) anchor to the younger phase's older
+anchor, forming an oldest-to-youngest chain. Phase-specific optional `prior_center`
 (BP1950) and `prior_scale` (years) live in each card's parameters. Conversion to
 native negative BP happens only in the service adapter.
+
+Legacy model-wide `anchors` presets remain readable: `center` gives a sole .5
+anchor, `end_start` gives 0/1 for uniform and .05/.95 for normal phases, and `none`
+preserves independent phases. Explicit card anchors take precedence. Compatibility
+interpretation does not rewrite old cards or saved input snapshots.
 
 Saved phase runs retain labelled event copies, phase specifications, settings,
 per-phase density arrays, quantile estimates, positive delta estimates, event

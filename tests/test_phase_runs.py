@@ -83,3 +83,37 @@ def test_phase_worker_and_saved_run(monkeypatch):
     invalid = deepcopy(project); invalid['phase_model']['saved_run']['result']['posterior']['samples'] = [[1]]
     with pytest.raises(ValueError, match='posterior metadata'):
         dump_project(invalid)
+
+
+def test_card_anchors_and_validation():
+    data = payload()
+    data['settings'] = dict(ordered=True, delta_scale=100)
+    data['phases'][0]['anchors'] = [.5]
+    data['phases'][1]['anchors'] = [.2, .8]
+    data['phases'].append(dict(id='phase-2', label='Final', distribution='uniform', order=2,
+                               parameters={}, anchors=[.25]))
+    data['events'].append(dict(id='last', label='Final', distribution='normal',
+                              parameters=dict(mean=2000, sd=20)))
+    request = phases.PhaseRequest(**data).model_dump()
+    _, orders = service.specification(request)
+    assert [order.anchors for order in orders] == [(.5, .2), (.8, .25)]
+    project = new_project(); project['phases'] = data['phases']
+    project['phase_model'] = dict(parameters={**data['settings'], 'sampling': data['sampling']})
+    assert load_project(dump_project(project)) == project
+    for invalid_anchors in ([.2, .2], [.8, .2], [0.]):
+        invalid = deepcopy(data); invalid['phases'][1]['anchors'] = invalid_anchors
+        with pytest.raises(ValueError):
+            phases.PhaseRequest(**invalid)
+        invalid_project = deepcopy(project); invalid_project['phases'][1]['anchors'] = invalid_anchors
+        with pytest.raises(ValueError):
+            dump_project(invalid_project)
+
+
+def test_legacy_anchor_presets_preserve_meaning():
+    for preset, expected in [('center', [(.5, .5)]), ('end_start', [(1., .05)]), ('none', [])]:
+        data = payload(); data['settings']['anchors'] = preset
+        _, orders = service.specification(phases.PhaseRequest(**data).model_dump())
+        assert [order.anchors for order in orders] == expected
+        project = new_project(); project['phases'] = data['phases']
+        project['phase_model'] = dict(parameters={**data['settings'], 'sampling': data['sampling']})
+        assert load_project(dump_project(project)) == project

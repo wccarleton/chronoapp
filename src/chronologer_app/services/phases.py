@@ -8,6 +8,7 @@ from scipy.stats import norm, uniform
 from .measurements import measurements
 from .posterior_plots import marginal, posterior_plots
 from .mcmc_diagnostics import build_diagnostics
+from ..phase_settings import anchors_for, ordered
 
 
 def specification(request):
@@ -20,11 +21,9 @@ def specification(request):
             prior_scale=p.get('prior_scale'))
     settings = request['settings']
     orders = []
-    if settings['anchors'] != 'none':
+    if ordered(settings):
         for a, b in zip(request['phases'], request['phases'][1:]):
-            anchors = (.5, .5) if settings['anchors'] == 'center' else (
-                1. if a['distribution'] == 'uniform' else .95,
-                0. if b['distribution'] == 'uniform' else .05)
+            anchors = (anchors_for(a, settings)[-1], anchors_for(b, settings)[0])
             orders.append(chronologer.Order(a['label'], b['label'], anchors,
                                            settings.get('delta_scale')))
     return specs, orders

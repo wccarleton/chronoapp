@@ -1,7 +1,8 @@
 import { projectState as state } from "./project-state.js";
+import { phaseAnchors, phaseSettings, anchorError } from './phase-settings.js';
 
 // Visual profiles only. The inference adapter consumes state.data.phases:
-// { id, label, distribution, order, parameters }. No pixel positions or inferred
+// { id, label, distribution, order, parameters, anchors }. No pixel positions or inferred
 // boundaries are part of a PhaseSpec. Add renderers here without changing cards.
 const profiles = {
   uniform: { label: "Uniform", width: () => 1 },
@@ -35,6 +36,7 @@ export function initPhase() {
   const canvas = document.getElementById("phase-canvas");
   const add = document.getElementById("add-phase");
   const status = document.getElementById("phase-status");
+  const orderToggle = document.getElementById('phase-ordered');
   let ownChange = false, drag = null;
   const specs = () => state.data?.phases ?? [];
   // Saved semantic order remains oldest-first; display younger above older.
@@ -55,6 +57,8 @@ export function initPhase() {
     list.replaceChildren();
     document.getElementById("phase-empty").hidden = specs().length > 0;
     add.disabled = !state.data || specs().length >= 100;
+    orderToggle.checked = phaseSettings(state.data?.phase_model?.parameters).ordered;
+    orderToggle.disabled = !state.data || state.busy;
     for (const phase of visualSpecs()) {
       const card = node("li", "phase-card");
       card.dataset.phaseId = phase.id;
@@ -92,9 +96,38 @@ export function initPhase() {
       select.addEventListener("change", () => {
         update(phase.id, { distribution: select.value });
         card.querySelector("svg").replaceWith(density(select.value));
+        refreshAnchors();
       });
       familyLabel.append(select);
       controls.append(nameLabel, familyLabel);
+      const anchors = phaseAnchors(phase, state.data?.phase_model?.parameters);
+      const olderLabel = node('label', '', 'Anchor quantile · older when two');
+      const olderAnchor = node('input', 'phase-anchor');
+      olderAnchor.type = 'number'; olderAnchor.step = 'any'; olderAnchor.required = true;
+      olderAnchor.value = anchors[0] ?? '';
+      const youngerLabel = node('label', '', 'Younger anchor quantile · optional');
+      const youngerAnchor = node('input', 'phase-anchor-younger');
+      youngerAnchor.type = 'number'; youngerAnchor.step = 'any'; youngerAnchor.value = anchors[1] ?? '';
+      youngerAnchor.placeholder = 'Blank: use the sole anchor on both sides';
+      olderLabel.append(olderAnchor); youngerLabel.append(youngerAnchor);
+      const anchorStatus = node('p', 'help'); anchorStatus.setAttribute('role', 'status');
+      function refreshAnchors() {
+        const current = specs().find(item => item.id === phase.id);
+        const problem = anchorError({ ...current, anchors: phaseAnchors(current, state.data?.phase_model?.parameters) });
+        for (const field of [olderAnchor, youngerAnchor]) {
+          field.min = '0'; field.max = '1'; field.setCustomValidity(problem ?? '');
+        }
+        anchorStatus.textContent = problem ?? 'One anchor is shared by both relationships. With two, the younger quantile must be greater than the older. Normal anchors exclude 0 and 1.';
+      }
+      function changeAnchors() {
+        const values = [olderAnchor.value === '' ? null : Number(olderAnchor.value)];
+        if (youngerAnchor.value !== '') values.push(Number(youngerAnchor.value));
+        update(phase.id, { anchors: values }); refreshAnchors();
+      }
+      olderAnchor.addEventListener('input', changeAnchors);
+      youngerAnchor.addEventListener('input', changeAnchors);
+      controls.append(olderLabel, youngerLabel, anchorStatus);
+      refreshAnchors();
       const members = () => (state.data?.events ?? []).filter(event => event.label === input.value).length;
       const membership = node('p', 'help', `${members()} project events with this label`);
       input.addEventListener('input', () => { membership.textContent = `${members()} project events with this label`; });
@@ -176,10 +209,17 @@ export function initPhase() {
   function cancelDrag() { if (drag) { cleanup(); render(); } }
   function escapeDrag(event) { if (event.key === "Escape") { event.preventDefault(); cancelDrag(); } }
   state.addEventListener("change", () => { if (!ownChange) { cancelDrag(); render(); } });
+  orderToggle.addEventListener('change', () => {
+    if (!state.data || state.busy) return;
+    const model = state.data.phase_model ?? { parameters: {} };
+    ownChange = true;
+    try { state.setPhaseModel({ ...model, parameters: { ...model.parameters, ordered: orderToggle.checked } }); }
+    finally { ownChange = false; }
+  });
   add.addEventListener("click", () => {
     if (state.busy || !state.data || specs().length >= 100) return;
     const phase = { id: `phase-${crypto.randomUUID()}`, label: `Phase ${specs().length + 1}`,
-      distribution: "uniform", order: specs().length, parameters: {} };
+      distribution: "uniform", order: specs().length, parameters: {}, anchors: [.5] };
     commit([...specs(), phase]); render();
     list.firstElementChild.scrollIntoView({ block: "nearest" });
     list.firstElementChild.querySelector("input").focus({ preventScroll: true });
