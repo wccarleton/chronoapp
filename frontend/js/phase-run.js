@@ -1,6 +1,6 @@
 import { projectState as state } from './project-state.js';
 import { runDensity } from './jobs.js?v=job-monitor-2';
-import { createSummaryPlot } from './plots.js';
+import { createSummaryPlot, createPhasePlot } from './plots.js';
 import { createMcmcDiagnostics } from './mcmc-diagnostics.js';
 import { DEFAULT_SAMPLING, samplingFor, samplingError, samplingControls } from './sampling-settings.js';
 import { phaseSettings, phaseCopy, anchorError } from './phase-settings.js';
@@ -94,6 +94,10 @@ export function initPhaseRun() {
         marginals: { parameters: phase.parameters, events } }, phase.label));
     }
     plots.push(createMcmcDiagnostics(output, result.mcmc));
+    const timeline = node('section', undefined, 'phase-timeline');
+    timeline.append(node('h3', 'Phase model posteriors · shared timeline'));
+    output.append(timeline);
+    plots.push(createPhasePlot(timeline, result.phases));
   }
   function render() {
     plots.forEach(plot => plot.dispose()); plots = [];

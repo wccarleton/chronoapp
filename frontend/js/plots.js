@@ -292,7 +292,9 @@ class InteractivePlot {
     this.left = this.rowTicks ? Math.min(180, Math.max(95, this.width * .24)) : 78;
     this.right = this.width - (this.showCurve || this.showUncalibrated ? 78 : 20);
     this.top = 30;
-    this.bottom = this.height - (this.visualLegend ? 150 : 58);
+    const series = this.visualLegend?.series;
+    if (series) this.height = 450 + series.length * 25;
+    this.bottom = this.height - (series ? 100 + series.length * 25 : this.visualLegend ? 150 : 58);
     this.svg.setAttribute("viewBox", `0 0 ${this.width} ${this.height}`);
     const { x: domain, y: range } = this.view;
     const x = value => this.left + (value - domain[0]) / (domain[1] - domain[0]) * (this.right - this.left);
@@ -340,7 +342,16 @@ class InteractivePlot {
       "text-anchor": "middle", class: "axis-title",
     }, this.xLabel));
     this.legend.replaceChildren();
-    if (this.visualLegend) {
+    if (series) {
+      series.forEach(({ label, color }, index) => {
+        const row = svgElement("g", { transform: `translate(12 ${this.bottom + 65 + index * 25})` });
+        row.append(svgElement("rect", { x: 0, y: -7, width: 42, height: 14, fill: color, "fill-opacity": .16 }));
+        row.append(svgElement("line", { x1: 0, x2: 42, y1: 0, y2: 0, stroke: color, "stroke-width": 2 }));
+        row.append(svgElement("text", { x: 54, y: 5 }, label));
+        this.legend.append(row);
+      });
+      this.legend.append(svgElement("text", { x: 12, y: this.bottom + 65 + series.length * 25 }, "Mean density; shading: pointwise 95% credible interval"));
+    } else if (this.visualLegend) {
       const entries = [
         ["mean", this.visualLegend.mean],
         ["interval", "95% credible interval (pointwise)"],
@@ -486,6 +497,42 @@ export function createSummaryPlot(container, result, title) {
   }
   if (result.marginals?.parameters?.length) container.append(element("p", "help", phase ? 'Parameter panels show phase center and full width (uniform) or mean and sigma (normal). Ordered downstream centers are derived from the selected quantiles and delta.' : process ? 'Parameter panels show the baseline log rate, GP amplitude and temporal length scale, and the integrated intensity (expected count over the declared period).' : "Parameter panels show marginal posterior histograms. Location (μ) and scale (σ) describe the underlying normal; truncation can make the model’s actual mean and SD differ."));
   return { dispose() { plots.forEach(p => p.dispose()); } };
+}
+
+/** Overlay fitted phase densities on their shared calendar and density axes. */
+export function createPhasePlot(container, phases) {
+  const palette = ["#176e73", "#c05a24", "#7762b0", "#a33e70", "#54822e", "#327aba"];
+  const colors = new Map([...phases].map(phase => phase.label).sort().map((label, i) => [label, palette[i % palette.length]]));
+  const base = {
+    x: [Math.min(...phases.map(p => p.density.t_values[0])), Math.max(...phases.map(p => p.density.t_values.at(-1)))],
+    y: [0, Math.max(...phases.map(p => Math.max(...p.density.upper_values, ...p.density.pdf_values))) * 1.08],
+  };
+  const note = "Fitted event-time distributions for all phases, integrating posterior location and scale uncertainty. Lines show posterior mean densities; shading shows pointwise 95% credible intervals. Densities retain their normalization on a common scale. Dates use BP1950 (before AD 1950).";
+  const plot = new InteractivePlot(container, {
+    title: "Phase model posteriors", subtitle: "Shared timeline · BP1950",
+    label: "Model density (1/year)", xLabel: "Years (BP1950)", domainUnits: "years (BP1950)",
+    base, height: 510, exportNote: note,
+    visualLegend: { series: phases.map(p => ({ label: p.label, color: colors.get(p.label) })) },
+    domainApplied: domain => plot.setBase({ x: domain, y: base.y }),
+    draw(group, x, y) {
+      // Draw all bands first so none obscures another phase's mean line.
+      for (const phase of phases) {
+        const d = phase.density, color = colors.get(phase.label);
+        const upper = d.t_values.map((t, i) => [x(t), y(d.upper_values[i])]);
+        const lower = d.t_values.map((t, i) => [x(t), y(d.lower_values[i])]).reverse();
+        group.append(svgElement("path", { d: `${path([...upper, ...lower])} Z`, fill: color, "fill-opacity": .16 }));
+      }
+      for (const phase of phases) {
+        const d = phase.density;
+        const line = svgElement("path", { d: path(d.t_values.map((t, i) => [x(t), y(d.pdf_values[i])])),
+          fill: "none", stroke: colors.get(phase.label), "stroke-width": 2, "data-phase-label": phase.label });
+        line.append(svgElement("title", {}, `${phase.label}: posterior mean model density`));
+        group.append(line);
+      }
+    },
+  });
+  container.append(element("p", "help", note));
+  return plot;
 }
 
 function distributionRenderer(result, { baseline = 0, scale = 1 } = {}) {

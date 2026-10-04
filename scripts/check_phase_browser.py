@@ -86,7 +86,7 @@ async def main():
                     const parameter=(name,calendar)=>({name,label:name,calendar,t_values:calendar?[-2600,-2500,-2400]:[10,20,30],pdf_values:[0,.05,0]});
                     window.fixture={model:'phase',coordinate_system:'negative_bp',sampling:{draws:4,tune:4,chains:1,cores:1,random_seed:912},divergences:0,warnings:[],elapsed_seconds:1,
                       posterior:{type:'xarray.DataTree',variables:['mu','scale','tau','delta'],sizes:{chain:1,draw:4,phase:2,event:2,order:1}},
-                      phases:project.phases.map(p=>({label:p.label,distribution:p.distribution,density,
+                      phases:project.phases.map((p,i)=>({label:p.label,distribution:p.distribution,density:{...density,t_values:i?[-2300,-2100,-1900]:density.t_values},
                         interval:{p:p.distribution==='uniform'?0:.05,q:p.distribution==='uniform'?1:.95,lower:estimate(-2550),upper:estimate(-2400)},parameters:[parameter('mu',true),parameter('scale',false)]})),
                       marginals:{parameters:[],events:[{id:'a',index:0,t_values:[-2530,-2500,-2470],pdf_values:[0,.03,0]},{id:'b',index:1,t_values:[-2230,-2200,-2170],pdf_values:[0,.03,0]}]},
                       diagnostics:{deltas:[{before:'Early',after:'Late',anchors:[.25,.2],...estimate(100)}]}};
@@ -112,6 +112,18 @@ async def main():
                 await js('finished=true')
                 await wait("!!state.data.phase_model.saved_run && document.querySelectorAll('#phase-output .phase-result').length===2")
                 assert await js("document.querySelector('#phase-output').innerText.includes('Anchor separations') && document.querySelectorAll('#phase-output svg').length>=2")
+                await wait("document.querySelectorAll('.phase-timeline path[data-phase-label]').length===2")
+                assert await js("""(()=>{
+                  const section=document.querySelector('.phase-timeline');
+                  const lines=[...section.querySelectorAll('path[data-phase-label]')];
+                  return section===document.querySelector('#phase-output').lastElementChild
+                    && new Set(lines.map(p=>p.getAttribute('stroke'))).size===2
+                    && lines.every(p=>p.getAttribute('d').startsWith('M'))
+                    && section.querySelector('svg').textContent.includes('Early')
+                    && section.querySelector('svg').textContent.includes('Late')
+                    && section.querySelector('.domain-older').value==='2600'
+                    && section.querySelector('.domain-younger').value==='1900';
+                })()""")
                 await js("const anchor=document.querySelector('[data-phase-id=\"p1\"] .phase-anchor');anchor.value='.3';anchor.dispatchEvent(new Event('input',{bubbles:true}))")
                 assert await js("document.querySelectorAll('#phase-output .phase-result').length===0 && state.data.phase_model.saved_run.parameters.phases[1].anchors[0]===.2")
                 await js("state.updateEvent(0,{parameters:{mean:2510,sd:20}})")
