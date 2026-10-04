@@ -183,6 +183,43 @@ class SingleDensityJobRequest(BaseModel):
     sampling: SamplingSettings | None = None
 
 
+class SimulationSettings(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    n: int = Field(default=10, strict=True, ge=1, le=100)
+    distribution: Literal['calrcarbon', 'normal', 'uniform'] = 'calrcarbon'
+    error: Positive = 30.
+    curve: str | None = 'intcal20'
+    draws: int = Field(default=1000, strict=True, ge=2, le=10000)
+
+    @model_validator(mode='after')
+    def curve_for(self):
+        if self.distribution == 'calrcarbon' and not self.curve:
+            raise ValueError('Select a curve for radiocarbon simulation.')
+        if self.distribution != 'calrcarbon' and self.curve is not None:
+            raise ValueError('Calendar measurements do not use a calibration curve.')
+        return self
+
+
+class SimulationRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    simulation: SimulationSettings
+    settings: DensitySettings
+    label: str = Field(default='Single density simulation', min_length=1, max_length=250)
+
+
+@router.post('/simulation/jobs', status_code=202)
+def start_simulation(request: SimulationRequest):
+    from ..services.simulation import simulate_in_worker
+    if request.simulation.distribution == 'calrcarbon':
+        require_local_curve(request.simulation.curve)
+    try:
+        return get_jobs().submit(simulate_in_worker, (request.model_dump(),), request.label)
+    except ValueError as error:
+        raise HTTPException(429, str(error)) from None
+    except OSError:
+        raise HTTPException(503, 'Cannot write simulation logs. Check the local log directory permissions.') from None
+
+
 @router.post('/single_density/jobs', status_code=202)
 def start_single_density(request: SingleDensityJobRequest):
     for curve in {e.parameters['curve'] for e in request.events if e.distribution == 'calrcarbon'}:

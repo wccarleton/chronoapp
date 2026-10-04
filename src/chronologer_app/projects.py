@@ -128,6 +128,10 @@ def validate_project(project):
             raise ValueError("Unsupported analysis model.")
         if not isinstance(summary["parameters"], dict):
             raise ValueError("Summary parameters must be a JSON object.")
+        if summary['parameters'].get('mode', 'inference') not in ('inference', 'simulate'):
+            raise ValueError('Summary operation must be inference or simulate.')
+        if summary['parameters'].get('mode') == 'simulate' and summary['model'] not in ('single_density', 'density'):
+            raise ValueError('Simulation is currently available only for single density.')
         validate_saved_sampling(summary['parameters'])
         if not isinstance(summary["events"], list) or len(summary["events"]) > 100:
             raise ValueError("A Summary analysis currently supports at most 100 events; the project database supports 10,000.")

@@ -343,8 +343,8 @@ class InteractivePlot {
     if (this.visualLegend) {
       const entries = [
         ["mean", this.visualLegend.mean],
-        ["interval", "95% credible interval (pointwise)"],
-        ...(this.visualLegend.events ? [["events", "Posterior event-date densities"]] : []),
+        ["interval", this.visualLegend.interval ?? "95% credible interval (pointwise)"],
+        ...(this.visualLegend.events ? [["events", this.visualLegend.eventLabel ?? "Posterior event-date densities"]] : []),
       ];
       entries.forEach(([kind, caption], index) => {
         const row = svgElement("g", { transform: `translate(12 ${this.bottom + 65 + index * 25})` });
@@ -417,6 +417,7 @@ class InteractivePlot {
 }
 
 export function createSummaryPlot(container, result, title) {
+  const simulation = result.mode === 'simulate';
   const process = result.model === 'ippp_gp';
   const curve = process ? { ...result.intensity, pdf_values: result.intensity.rate_values } : result.density;
   const { t_values: times, pdf_values: mean, lower_values: low, upper_values: high } = curve;
@@ -429,16 +430,19 @@ export function createSummaryPlot(container, result, title) {
   const base = { x: [times[0], times.at(-1)], y: [0, Math.max(...high, ...mean) * 1.08] };
   const parameters = element("div", "summary-parameter-plots");
   if (result.marginals?.parameters?.length) container.append(parameters);
-  const modelNote = process
+  const modelNote = simulation
+    ? 'Prior mean model density and pointwise 95% prior interval across independent predictive replicates. Translucent simulated event-date densities are histograms of generated latent dates, peak-scaled to 20% for display only. Events are exchangeable simulation slots. These are not fitted posteriors. CSV exports the first complete dataset; plots summarize all replicates.'
+    : process
     ? 'Posterior mean event intensity and pointwise 95% credible interval across the declared observation period. Units: events per year; no area normalization. Translucent event-date posteriors are peak-scaled to 20% of the intensity curve for display only. Inspect MCMC diagnostics and sensitivity to the observation window, GP priors and grid.'
     : "Posterior mean model density and pointwise 95% credible interval, integrating location and scale uncertainty. Translucent event-date posteriors share the calendar axis, each peak scaled to 20% of the model curve peak (display only). Inspect MCMC diagnostics before interpretation.";
-  const note = `${modelNote} Dates are expressed in years using the BP1950 datum (before AD 1950). Where radiocarbon determinations are used, they are calibrated as part of modelling using each event’s selected calibration curve.`;
-  container.append(element("h3", "", process ? 'Event intensity and posterior event dates · BP1950' : "Model density and posterior event dates · BP1950"));
+  const note = `${modelNote} Dates are expressed in years using the BP1950 datum (before AD 1950). ${simulation ? (result.simulation.settings.distribution === 'calrcarbon' ? 'Radiocarbon measurements are generated forward through the chosen curve with curve and laboratory uncertainty.' : 'Calendar measurements are generated with the selected measurement uncertainty.') : 'Where radiocarbon determinations are used, they are calibrated as part of modelling using each event’s selected calibration curve.'}`;
+  container.append(element("h3", "", simulation ? 'Model density and simulated event dates · BP1950' : process ? 'Event intensity and posterior event dates · BP1950' : "Model density and posterior event dates · BP1950"));
   const plot = new InteractivePlot(container, {
     title, subtitle: `${process ? 'GP IPPP' : result.model === "gaussian_mixture" ? "Gaussian mixture" : result.model === 'single_density' ? 'Single truncated-normal density' : "Truncated-normal radiocarbon hierarchy"} · Years (BP1950)`, label: process ? 'Event intensity (events/year)' : "Model density (1/year)", base, height: 510,
     xLabel: "Years (BP1950)", domainUnits: "years (BP1950)",
-    visualLegend: { mean: process ? "Posterior mean event intensity" : "Posterior mean model density", events: Boolean(result.marginals?.events?.length) },
-    exportNote: `${note} ${result.divergences} divergences.`,
+    visualLegend: { mean: simulation ? 'Prior mean model density' : process ? "Posterior mean event intensity" : "Posterior mean model density", events: Boolean(result.marginals?.events?.length),
+      ...(simulation ? { interval: '95% prior interval (pointwise)', eventLabel: 'Simulated event-date densities' } : {}) },
+    exportNote: simulation ? note : `${note} ${result.divergences} divergences.`,
     domainApplied: domain => plot.setBase({ x: domain, y: base.y }),
     draw(group, x, y) {
       const upper = times.map((t, i) => [x(t), y(high[i])]);
@@ -452,7 +456,7 @@ export function createSummaryPlot(container, result, title) {
           fill: "currentColor", "fill-opacity": .16, stroke: "currentColor", "stroke-opacity": .35, "stroke-width": .8,
           "data-event-index": event.index,
         });
-        shape.append(svgElement("title", {}, `${event.id}: model-conditioned event-date posterior; peak scaled for display`));
+        shape.append(svgElement("title", {}, `${event.id}: ${simulation ? 'simulated latent event dates' : 'model-conditioned event-date posterior'}; peak scaled for display`));
         group.append(shape);
       }
       group.append(svgElement("path", { d: path(times.map((t, i) => [x(t), y(mean[i])])), class: "data-line" }));
@@ -470,10 +474,10 @@ export function createSummaryPlot(container, result, title) {
     const times = parameter.t_values, values = parameter.pdf_values;
     const base = { x: [times[0], times.at(-1)], y: [0, Math.max(...values) * 1.1] };
     const marginalPlot = new InteractivePlot(section, {
-      title: `${title} — ${caption}`, subtitle: `Marginal posterior: ${parameter.name}`,
-      label: process ? 'Posterior density' : "Posterior density / year", calendar: parameter.calendar, height: 190, base, interactive: false,
+      title: `${title} — ${caption}`, subtitle: `Marginal ${simulation ? 'prior' : 'posterior'}: ${parameter.name}`,
+      label: simulation ? 'Prior density / year' : process ? 'Posterior density' : "Posterior density / year", calendar: parameter.calendar, height: 190, base, interactive: false,
       xLabel: parameter.calendar ? "Years (BP1950)" : caption, domainUnits: parameter.calendar ? "years (BP1950)" : undefined,
-      exportNote: process ? 'Histogram of retained GP IPPP posterior draws.' : "Histogram of retained posterior draws. Location and scale are truncated-normal parameters, not the truncated distribution's actual moments.",
+      exportNote: simulation ? 'Histogram of prior-predictive parameter draws. Location and scale describe the underlying normal before truncation.' : process ? 'Histogram of retained GP IPPP posterior draws.' : "Histogram of retained posterior draws. Location and scale are truncated-normal parameters, not the truncated distribution's actual moments.",
       domainApplied: domain => marginalPlot.setBase({ x: domain, y: base.y }),
       draw(group, x, y) {
         const points = times.map((t, i) => [x(t), y(values[i])]);
@@ -483,7 +487,7 @@ export function createSummaryPlot(container, result, title) {
     });
     plots.push(marginalPlot);
   }
-  if (result.marginals?.parameters?.length) container.append(element("p", "help", process ? 'Parameter panels show the baseline log rate, GP amplitude and temporal length scale, and the integrated intensity (expected count over the declared period).' : "Parameter panels show marginal posterior histograms. Location (μ) and scale (σ) describe the underlying normal; truncation can make the model’s actual mean and SD differ."));
+  if (result.marginals?.parameters?.length) container.append(element("p", "help", simulation ? 'Parameter panels show prior histograms. Location and scale describe the underlying normal; truncation can change its actual moments.' : process ? 'Parameter panels show the baseline log rate, GP amplitude and temporal length scale, and the integrated intensity (expected count over the declared period).' : "Parameter panels show marginal posterior histograms. Location (μ) and scale (σ) describe the underlying normal; truncation can make the model’s actual mean and SD differ."));
   return { dispose() { plots.forEach(p => p.dispose()); } };
 }
 

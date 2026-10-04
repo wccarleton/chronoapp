@@ -4,6 +4,7 @@ import { createSummaryPlot } from "./plots.js";
 import { createMcmcDiagnostics } from "./mcmc-diagnostics.js";
 import { pagination, PAGE_SIZE } from "./pagination.js";
 import { DEFAULT_SAMPLING, samplingFor, samplingError, samplingControls } from "./sampling-settings.js";
+import { simulating, simulationFor, simulationError, simulationControls, csvDownload } from './simulation.js';
 
 // Latest plot-ready result persists per summary; raw chains are never serialized.
 const models = { single_density: "Single density", mixture: "Gaussian mixture" };
@@ -21,7 +22,9 @@ const settingsFor = summary => summary.model === 'ippp_gp'
   : summary.model === "mixture"
   ? { K_max: summary.parameters.K_max === undefined ? 5 : summary.parameters.K_max }
   : Object.fromEntries(Object.entries(defaults).map(([key, value]) => [key, summary.parameters[key] === undefined ? value : summary.parameters[key]]));
-const signature = summary => JSON.stringify([modelFor(summary), summary.events, settingsFor(summary), samplingFor(summary)]);
+const signature = summary => JSON.stringify([modelFor(summary), simulating(summary) ? 'simulate' : 'inference',
+  simulating(summary) ? [] : summary.events, settingsFor(summary),
+  simulating(summary) ? simulationFor(summary) : samplingFor(summary)]);
 function node(tag, text, className) {
   const element = document.createElement(tag);
   if (text !== undefined) element.textContent = text;
@@ -92,7 +95,30 @@ export function initSummarize({ process = false } = {}) {
       const gloss = node("p", modelGlosses[modelFor(summary)], "help summary-model-gloss");
       gloss.id = `model-gloss-${summary.id}`;
       select.setAttribute("aria-describedby", gloss.id);
-      card.append(fields, gloss, node("p", `${summary.events.length} events · saved copies, independent of later dataset edits`, "help"));
+      const simulation = simulating(summary);
+      if (simulation) gloss.textContent = 'Simulates the single truncated-normal hierarchy from the displayed hyperpriors, including uncertain event dates and noisy measurements. Outputs are prior predictive, not fitted posteriors.';
+      card.append(fields, gloss);
+      if (modelFor(summary) === 'single_density') {
+        const mode = node('fieldset', undefined, 'summary-mode'); mode.append(node('legend', 'Operation'));
+        for (const value of ['inference', 'simulate']) {
+          const label = node('label', value === 'inference' ? 'Inference' : 'Simulate');
+          const radio = node('input'); radio.type = 'radio'; radio.name = `mode-${summary.id}`; radio.value = value;
+          radio.checked = value === (simulation ? 'simulate' : 'inference'); radio.dataset.mode = value;
+          radio.addEventListener('change', () => {
+            const current = specs().find(s => s.id === summary.id);
+            update(summary.id, { parameters: { ...current.parameters, mode: value,
+              ...(value === 'simulate' ? { simulation: simulationFor(current) } : {}) } }); render();
+          });
+          label.prepend(radio); mode.append(label);
+        }
+        card.append(mode);
+      }
+      if (simulation) card.append(simulationControls(summary, (simulation, rerender) => {
+        const current = specs().find(s => s.id === summary.id);
+        update(summary.id, { parameters: { ...current.parameters, simulation } });
+        if (rerender) render();
+      }));
+      else card.append(node('p', `${summary.events.length} events · saved copies, independent of later dataset edits`, 'help'));
       const selected = node("ul", undefined, "summary-events");
       summary.events.forEach((event, index) => {
         const row = node("li");
@@ -152,7 +178,8 @@ export function initSummarize({ process = false } = {}) {
         if (summary.events.length + chosen.size > 100) { status.textContent = "Each summary supports up to 100 events."; return; }
         update(summary.id, { events: [...summary.events, ...[...chosen].sort((a, b) => a - b).map(i => events[i])] }); render();
       }), addAll, button("Go to Project / load CSV", () => document.getElementById("project-tab").click()), status);
-      card.append(selected, removeAll, picker, button(process ? 'Remove process' : "Remove summary", () => {
+      if (!simulation) card.append(selected, removeAll, picker);
+      card.append(button(process ? 'Remove process' : "Remove summary", () => {
         if (window.confirm(`Remove ${summary.label}?`)) { commit(specs().filter(item => item.id !== summary.id)); render(); }
       }));
       const fitSettings = node("div", undefined, "phase-fields summary-settings");
@@ -195,14 +222,14 @@ export function initSummarize({ process = false } = {}) {
         label.append(input); fitSettings.append(label);
         fitSettings.append(node("p", "Normal, uniform, or radiocarbon measurements in BP1950. Each radiocarbon event uses its selected curve. Fixed sparse-weight and scale hyperpriors use a time scale derived from the input measurements. Inspect diagnostics before interpretation.", "help"));
       }
-      const fitStatus = node("p", running.has(summary.id) ? "Inference submitted. Progress, cancellation and messages are above the tabs; you can keep working elsewhere." : failures.get(summary.id) ?? "", "summary-fit-status help");
+      const fitStatus = node("p", running.has(summary.id) ? `${simulation ? 'Simulation' : 'Inference'} submitted. Progress, cancellation and messages are above the tabs; you can keep working elsewhere.` : failures.get(summary.id) ?? "", "summary-fit-status help");
       fitStatus.setAttribute("role", "status");
-      const run = button(process ? 'Fit GP IPPP' : summary.model === "mixture" ? "Fit mixture" : "Fit single density", async () => {
+      const run = button(simulation ? 'Simulate single density' : process ? 'Fit GP IPPP' : summary.model === "mixture" ? "Fit mixture" : "Fit single density", async () => {
         const current = specs().find(s => s.id === summary.id);
         if (running.has(summary.id) || !current) return;
         const settings = settingsFor(current);
         const sampling = samplingFor(current);
-        const error = samplingError(sampling);
+        const error = simulation ? simulationError(simulationFor(current)) : samplingError(sampling);
         if (error) { fitStatus.textContent = error; return; }
         const mixture = current.model === "mixture";
         const ippp = current.model === 'ippp_gp';
@@ -215,7 +242,7 @@ export function initSummarize({ process = false } = {}) {
         if (mixture && (!Number.isInteger(settings.K_max) || settings.K_max < 1 || settings.K_max > 20)) {
           fitStatus.textContent = "Maximum modes must be an integer from 1 to 20."; return;
         }
-        if (!current.events.length || current.events.some(e => !["calrcarbon", "normal", "uniform"].includes(e.distribution) || (e.datum ?? "BP1950") !== "BP1950")) {
+        if (!simulation && (!current.events.length || current.events.some(e => !["calrcarbon", "normal", "uniform"].includes(e.distribution) || (e.datum ?? "BP1950") !== "BP1950"))) {
           fitStatus.textContent = "Add normal, uniform, or radiocarbon measurements using BP1950 before fitting."; return;
         }
         if (!mixture && !ippp && (!Object.values(settings).every(v => typeof v === "number" && Number.isFinite(v))
@@ -223,20 +250,21 @@ export function initSummarize({ process = false } = {}) {
           fitStatus.textContent = "Enter finite prior settings with positive scales and Older greater than Younger."; return;
         }
         // Record the exact visible settings used, including starting suggestions.
-        const parameters = { ...settings, sampling };
+        const parameters = { ...current.parameters, ...settings, sampling,
+          ...(simulation ? { mode: 'simulate', simulation: simulationFor(current) } : { mode: 'inference' }) };
         update(current.id, { parameters, model: modelFor(current) });
         const token = { id: current.id, generation, signature: signature(current) };
         running.set(current.id, token); results.delete(current.id); failures.delete(current.id); render();
         try {
-          const payload = { ...(ippp ? { observation: settings } : mixture ? { K_max: settings.K_max } : { settings }),
+          const payload = simulation ? { settings, simulation: simulationFor(current) } : { ...(ippp ? { observation: settings } : mixture ? { K_max: settings.K_max } : { settings }),
             events: current.events.map(e => ({ id: e.id, distribution: e.distribution,
               parameters: e.parameters, datum: e.datum ?? "BP1950" })) };
-          const result = await runDensity({ ...payload, sampling }, `${state.data.metadata.project_name} / ${current.label}`);
+          const result = await runDensity({ ...payload, ...(simulation ? {} : { sampling }) }, `${state.data.metadata.project_name} / ${current.label}`);
           const latest = specs().find(s => s.id === token.id);
           if (generation === token.generation && latest && signature(latest) === token.signature) {
             results.set(token.id, { signature: token.signature, result });
             const saved_run = { id: crypto.randomUUID(), created_at: new Date().toISOString(),
-              model: modelFor(latest), events: structuredClone(latest.events), parameters,
+              model: modelFor(latest), events: simulation ? [] : structuredClone(latest.events), parameters,
               result };
             commit(specs().map(s => s.id === token.id ? { ...s, saved_run } : s));
           }
@@ -246,10 +274,12 @@ export function initSummarize({ process = false } = {}) {
       });
       run.classList.add("summary-fit");
       run.disabled = running.has(summary.id);
-      card.append(fitSettings, samplingControls(samplingFor(summary), sampling => {
+      card.append(fitSettings);
+      if (!simulation) card.append(samplingControls(samplingFor(summary), sampling => {
         const current = specs().find(s => s.id === summary.id);
         update(summary.id, { parameters: { ...current.parameters, sampling } });
-      }), run, fitStatus);
+      }));
+      card.append(run, fitStatus);
       if (summary.saved_run) {
         const saved = summary.saved_run;
         const tools = node("div", undefined, "summary-saved-run");
@@ -283,9 +313,11 @@ export function initSummarize({ process = false } = {}) {
       if (!running.has(summary.id) && fitted && fitted.signature === signature(summary)) {
         try {
           const result = fitted.result;
-          resultContainer.append(node("p", `Completed in ${result.elapsed_seconds.toFixed(1)} s · ${result.sampling.chains} chains × ${result.sampling.draws} draws (${result.sampling.tune} tuning per chain) · ${result.sampling.cores ?? 1} cores. ${result.warnings.join(" ")}`, "help"));
+          resultContainer.append(node("p", result.mode === 'simulate'
+            ? `Simulation completed in ${result.elapsed_seconds.toFixed(1)} s · ${result.sampling.draws} independent predictive replicates. ${result.warnings.join(' ')}`
+            : `Completed in ${result.elapsed_seconds.toFixed(1)} s · ${result.sampling.chains} chains × ${result.sampling.draws} draws (${result.sampling.tune} tuning per chain) · ${result.sampling.cores ?? 1} cores. ${result.warnings.join(" ")}`, "help"));
           const plot = createSummaryPlot(resultContainer, result, summary.label);
-          const mcmc = createMcmcDiagnostics(resultContainer, result.mcmc);
+          const mcmc = result.mode === 'simulate' ? { dispose() {} } : createMcmcDiagnostics(resultContainer, result.mcmc);
           plots.set(summary.id, { dispose() { plot.dispose(); mcmc.dispose(); } });
           if (result.model === "gaussian_mixture") {
             const diagnostics = node("details", undefined, "mixture-diagnostics");
@@ -294,6 +326,7 @@ export function initSummarize({ process = false } = {}) {
             diagnostics.append(node("p", `Fraction of draws with weight below 0.05: ${result.diagnostics.weight_below_005.map(w => w.toFixed(2)).join(", ")}. These describe weight uncertainty, not an inferred number of groups.`, "help"));
             resultContainer.append(diagnostics);
           }
+          if (result.mode === 'simulate') resultContainer.append(csvDownload(result, summary.label));
         } catch (error) { resultContainer.replaceChildren(node("p", error.message, "help")); }
       }
     }

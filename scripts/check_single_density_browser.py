@@ -108,7 +108,48 @@ async def main():
                     if(!decoded.ok)throw Error(await decoded.text());
                     (await decoded.json()).summaries[0].saved_run.model==='single_density'""")
                 assert not errors, errors
-                print('PASS: legacy name, single-density selector, mixed-type request, plots and archive round trip. No MCMC.')
+                await js("document.querySelector('[data-mode=simulate]').click()")
+                assert await js("!document.querySelector('.simulation-download') && !!document.querySelector('.simulation-options') && state.data.summaries[0].events.length===4")
+                await js("""const family=document.querySelector('[data-simulation=distribution]');
+                    family.value='normal';family.dispatchEvent(new Event('change'));""")
+                assert await js("!document.querySelector('[data-simulation=curve]')")
+                await js("""for(const [key,value] of Object.entries({n:3,draws:4,error:20})) {
+                    const input=document.querySelector(`[data-simulation=${key}]`);input.value=value;input.dispatchEvent(new Event('input'));}
+                    const family=document.querySelector('[data-simulation=distribution]');
+                    family.value='calrcarbon';family.dispatchEvent(new Event('change'));""")
+                assert await js("!!document.querySelector('[data-simulation=curve]') && state.data.summaries[0].parameters.simulation.n===3 && state.data.summaries[0].parameters.simulation.error===20")
+                await js("""const events=[2400,2500,2600].map((age,index)=>({id:`Sim-${index+1}`,distribution:'calrcarbon',datum:'BP1950',parameters:{c14_mean:age,c14_err:20,curve:'intcal20'}}));
+                    const {posterior,...result}=mock;
+                    window.mock={...result,mode:'simulate',sampling:{draws:4,tune:0,chains:1,cores:1,random_seed:912},
+                      prior:{...posterior,sizes:{chain:1,draw:4,event:3}},
+                      simulation:{settings:structuredClone(state.data.summaries[0].parameters.simulation),events,exported_draw:0},
+                      marginals:{parameters:result.marginals.parameters,events:events.map((e,index)=>({...result.marginals.events[index],id:e.id}))}};
+                    const inferenceFetch=window.fetch;
+                    window.fetch=async(url,options)=>{
+                      if(url==='/api/simulation/jobs'){sent=JSON.parse(options.body);return new Response(JSON.stringify({id:'mock',label:'Simulation',status:'completed',stage:'Completed',total:4,completed:4,elapsed_seconds:1}),{status:200,headers:{'Content-Type':'application/json'}});}
+                      return inferenceFetch(url,options);
+                    };
+                    document.querySelector('.summary-fit').click();""")
+                await wait("!!document.querySelector('.simulation-download')", timeout=20)
+                assert await js("sent.simulation.n===3 && !sent.events && !sent.sampling && document.querySelector('.summary-result').innerText.includes('Prior') && state.data.summaries[0].saved_run.events.length===0")
+                assert await js("""const encoded=await originalFetch('/api/projects/encode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(state.data)});
+                    if(!encoded.ok)throw Error(await encoded.text());
+                    const decoded=await originalFetch('/api/projects/decode',{method:'POST',body:await encoded.blob()});
+                    if(!decoded.ok)throw Error(await decoded.text());
+                    (await decoded.json()).summaries[0].saved_run.result.mode==='simulate'""")
+                await js("""window.downloaded=null;const originalURL=URL.createObjectURL;
+                    URL.createObjectURL=blob=>{blob.text().then(text=>window.downloaded=text);return originalURL(blob);};
+                    HTMLAnchorElement.prototype.click=function(){};
+                    document.querySelector('.simulation-download').click();""")
+                await wait("!!window.downloaded", timeout=5)
+                csv = await js("window.downloaded")
+                from chronologer_app.projects import import_csv
+                imported = import_csv(csv.encode('utf-8'), 'simulation.csv')
+                assert len(imported['events']) == 3, imported
+                await js("document.querySelector('[data-mode=inference]').click()")
+                assert await js("!document.querySelector('.simulation-options') && !document.querySelector('.simulation-download') && state.data.summaries[0].events.length===4")
+                assert not errors, errors
+                print('PASS: single-density inference, simulation controls, plots, importer-ready CSV and archive round trips. No MCMC.')
         finally:
             browser.terminate()
             browser.wait(timeout=10)

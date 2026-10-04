@@ -309,3 +309,23 @@ to 32 in the UI. Saved results contain `intensity` arrays (`t_values`, `rate_val
 the resolved observation/GP specification. Validation checks that intensity
 endpoints and the saved specification match the run's declared dates. Existing
 summary results and project archives remain unchanged.
+
+Single-density summaries optionally store `parameters.mode = "simulate"`;
+missing mode means inference. `parameters.simulation` records event count `n`,
+measurement `distribution`, measurement SD `error`, `curve` (null for calendar
+measurements), and independent predictive replicate count `draws`. The existing
+population bounds and hyperprior settings apply to both operations.
+
+Simulation runs have empty input-event snapshots. Their result contains `prior`
+metadata instead of `posterior`, `mode: "simulate"`, and a `simulation` snapshot
+with settings and the first complete generated dataset (`exported_draw: 0`).
+Plots summarize all independent prior-predictive replicates; they are not fitted
+posteriors. Generated event indices are exchangeable slots across replicates.
+No chains or MCMC diagnostics are saved. Saving, reopening, and loading saved
+runs preserves the plots and CSV download.
+
+The CSV exports that first dataset, not average measurements across replicates.
+Radiocarbon exports use the current importer columns
+`id,c14_mean,c14_err,curve,datum`. Normal exports use
+`id,distribution,mean,sd,datum`; uniform exports use
+`id,distribution,lower,upper,datum`. Calendar CSV import remains future work.
