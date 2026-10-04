@@ -127,3 +127,26 @@ def test_legacy_anchor_presets_preserve_meaning():
         project = new_project(); project['phases'] = data['phases']
         project['phase_model'] = dict(parameters={**data['settings'], 'sampling': data['sampling']})
         assert load_project(dump_project(project)) == project
+
+
+def test_explicit_connections_and_positions():
+    data = payload()
+    # Explicit direction overrides list order. Pixels are never sent to the engine.
+    data['settings'] = dict(ordered=True, edges=[dict(source='phase-1', target='phase-0')])
+    request = phases.PhaseRequest(**data).model_dump()
+    _, orders = service.specification(request)
+    assert [(order.before, order.after) for order in orders] == [('Late', 'Early')]
+    project = new_project(); project['phases'] = deepcopy(data['phases'])
+    for i, phase in enumerate(project['phases']):
+        phase['position'] = dict(x=50 + i * 100, y=200 - i * 100)
+    project['phase_model'] = dict(parameters={**data['settings'], 'sampling': data['sampling']})
+    assert load_project(dump_project(project)) == project
+    invalid = deepcopy(project); invalid['phase_model']['parameters']['edges'].append(dict(source='phase-0', target='phase-1'))
+    with pytest.raises(ValueError, match='cycles'):
+        dump_project(invalid)
+    invalid = deepcopy(project); invalid['phase_model']['parameters']['edges'][0]['target'] = 'missing'
+    with pytest.raises(ValueError, match='existing'):
+        dump_project(invalid)
+    invalid = deepcopy(project); invalid['phases'][0]['position']['x'] = float('nan')
+    with pytest.raises(ValueError, match='position'):
+        dump_project(invalid)

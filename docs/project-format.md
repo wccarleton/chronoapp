@@ -92,7 +92,8 @@ format version 1. Existing files without this entry load unchanged. Each spec
 contains a stable UUID-based `id`, editable `label`, `distribution` (`uniform`
 or `normal`), contiguous zero-based `order`, and a JSON `parameters`
 object. IDs must be unique. Up to 100 phases are supported. List position and
-order must agree; pixel positions are never serialized.
+order must agree for stable list indexing. Optional `position: {x, y}` stores
+canvas pixels; these never enter an engine specification or define precedence.
 
 Each card can also contain `anchors`, a list of one or two quantile probabilities.
 One anchor serves both incoming and outgoing relationships. With two, the first
@@ -100,30 +101,35 @@ is older and the second younger, so the first must be strictly smaller. Uniform
 anchors allow 0 and 1; normal anchors must lie strictly between them. These are
 distribution quantiles, not fitted boundary parameters.
 
-`frontend/js/phase.js` renders schematic vertical density profiles and handles
-drag ordering. The profile registry is the renderer extension point;
-`projectState.setPhases()` is the semantic state boundary. The separate
-`phase-run.js` panel submits the current model to `/api/phases/jobs`. Saved order remains
-oldest-first; the canvas displays it bottom-to-top so older is deeper. This also
-preserves the meaning of existing saved phases. Block size and spacing do not
-define durations or separations. Event membership uses exact equality between
-the project's event label and the phase label. Escape cancels dragging, and focused grips
-support arrow-key ordering. Project New/Open replaces phases; CSV imports keep
-them. Saving and reopening preserves IDs, names, distributions, and order.
+`frontend/js/phase.js` retains the collapsible phase settings and schematic
+profiles. `phase-canvas.js` owns node dragging and connector geometry;
+`projectState.setPhaseCanvas()` saves cards and edges together. Initial legacy
+layout places older phases below younger ones. The timeline background is a
+visual guide only. Each node has a bottom input and top output. Drag an output
+to an input to connect, or activate output then input using the keyboard.
+Buttons below the canvas delete connections. Escape cancels dragging; focused
+grips support arrow-key movement. Moving a node never changes its relationships
+or invalidates a fitted result. Event membership still uses exact labels.
 
 The optional `phase_model` object is stored in `data/phase_model.json`. It has
 `parameters` and optionally `saved_run`. Parameters contain `ordered` (boolean),
 `delta_scale` (positive years or null for engine defaults), and the shared MCMC
-`sampling` settings. Ordering is toggled in the model builder. Adjacent cards
-connect the older phase's younger (or sole) anchor to the younger phase's older
-anchor, forming an oldest-to-youngest chain. Phase-specific optional `prior_center`
+`sampling` settings, and optional `edges: [{source, target}]` referencing stable
+phase IDs. `ordered` enables or disables applying the saved connections without
+deleting them. Explicit edges define precedence independently of positions and
+list order; an empty edge list means no relationships. Each source's younger
+(or sole) anchor connects to its target's older anchor. Only disjoint chains are
+supported by the existing engine; cycles, self-connections, duplicate edges,
+branching and nonexistent IDs are rejected. Phase-specific optional `prior_center`
 (BP1950) and `prior_scale` (years) live in each card's parameters. Conversion to
 native negative BP happens only in the service adapter.
 
 Legacy model-wide `anchors` presets remain readable: `center` gives a sole .5
 anchor, `end_start` gives 0/1 for uniform and .05/.95 for normal phases, and `none`
 preserves independent phases. Explicit card anchors take precedence. Compatibility
-interpretation does not rewrite old cards or saved input snapshots.
+interpretation does not rewrite saved input snapshots. Older projects without
+edges resolve their existing ordered list into equivalent connections; loading
+in the UI adds default positions and explicit edges to the current definition.
 
 Saved phase runs retain labelled event copies, phase specifications, settings,
 per-phase density arrays, quantile estimates, positive delta estimates, event

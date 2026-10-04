@@ -5,8 +5,14 @@ export function phaseAnchors(phase, settings = {}) {
   if (settings.anchors === 'end_start') return phase.distribution === 'uniform' ? [0, 1] : [.05, .95];
   return [.5];
 }
-export function phaseSettings(settings = {}) {
-  return { ordered: settings.ordered ?? settings.anchors !== 'none', delta_scale: settings.delta_scale ?? null };
+export function phaseEdges(phases, settings = {}) {
+  if (settings.edges != null) return settings.edges.map(edge => ({ source: edge.source, target: edge.target }));
+  return (settings.ordered ?? settings.anchors !== 'none')
+    ? phases.slice(1).map((phase, i) => ({ source: phases[i].id, target: phase.id })) : [];
+}
+export function phaseSettings(settings = {}, phases = []) {
+  return { ordered: settings.ordered ?? settings.anchors !== 'none', delta_scale: settings.delta_scale ?? null,
+    edges: phaseEdges(phases, settings) };
 }
 export function phaseCopy(phase, settings = {}) {
   return { id: phase.id, label: phase.label, distribution: phase.distribution, order: phase.order,

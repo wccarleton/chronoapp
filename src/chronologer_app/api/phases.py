@@ -9,7 +9,7 @@ from .calibration import require_local_curve
 from ..sampling import SamplingSettings
 from ..services.jobs import get_jobs
 from ..services.phases import fit_in_worker
-from ..phase_settings import validate_anchors
+from ..phase_settings import validate_anchors, connections
 
 router = APIRouter()
 
@@ -39,11 +39,18 @@ class PhaseSpec(BaseModel):
         return self
 
 
+class Edge(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    source: str = Field(min_length=1, max_length=120)
+    target: str = Field(min_length=1, max_length=120)
+
+
 class PhaseSettings(BaseModel):
     model_config = ConfigDict(extra='forbid')
     anchors: Literal['center', 'end_start', 'none'] | None = None  # Legacy preset only.
     ordered: bool | None = Field(default=None, strict=True)
     delta_scale: Positive | None = None
+    edges: list[Edge] | None = Field(default=None, max_length=100)
 
 
 class PhaseRequest(BaseModel):
@@ -62,9 +69,10 @@ class PhaseRequest(BaseModel):
         if len({p.id for p in self.phases}) != len(self.phases):
             raise ValueError('Phase IDs must be unique.')
         if [p.order for p in self.phases] != list(range(len(self.phases))):
-            raise ValueError('Supply phases in oldest-first order.')
+            raise ValueError('Phase order must match its list index; explicit connections define chronology.')
         if set(labels) != {e.label for e in self.events}:
             raise ValueError('Each phase needs events with exactly the same label; all submitted labels must have a phase.')
+        connections([p.model_dump() for p in self.phases], self.settings.model_dump())
         return self
 
 

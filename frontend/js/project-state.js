@@ -1,5 +1,7 @@
 // One document shared by tabs. Opaque local-app file references and dirty state are session-only;
 // the serializable document contains only metadata, events, and provenance.
+import { phaseEdges } from './phase-settings.js';
+
 class ProjectState extends EventTarget {
   data = null;
   fileHandle = null;
@@ -12,6 +14,13 @@ class ProjectState extends EventTarget {
   }
   replace(data, handle = null) {
     this.data = structuredClone(data);
+    if (this.data.phases) {
+      this.data.phases = this.data.phases.map((phase, index) => ({ ...phase,
+        position: phase.position ?? { x: 50, y: 50 + (this.data.phases.length - index - 1) * 650 } }));
+      const model = this.data.phase_model ?? { parameters: {} };
+      this.data.phase_model = { ...model, parameters: { ...model.parameters,
+        edges: phaseEdges(this.data.phases, model.parameters) } };
+    }
     this.fileHandle = handle;
     this.dirty = false;
     this.revision++;
@@ -37,6 +46,14 @@ class ProjectState extends EventTarget {
   // Future inference adapters consume these semantic specs, never canvas pixels.
   setPhases(phases) {
     this.edit(data => { data.phases = structuredClone(phases).map((phase, order) => ({ ...phase, order })); });
+  }
+  setPhaseCanvas(phases, edges) {
+    this.edit(data => {
+      data.phases = structuredClone(phases).map((phase, order) => ({ ...phase, order,
+        position: phase.position ?? { x: 50, y: 50 + (phases.length - order - 1) * 650 } }));
+      const model = data.phase_model ?? { parameters: {} };
+      data.phase_model = { ...model, parameters: { ...model.parameters, edges: structuredClone(edges) } };
+    });
   }
   setName(name) { this.edit(data => { data.metadata.project_name = name; }); }
   importRecords(imported) {

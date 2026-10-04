@@ -17,9 +17,9 @@ function button(text, action) {
 }
 const eventCopy = event => ({ id: event.id, label: event.label, distribution: event.distribution,
   parameters: event.parameters, datum: event.datum ?? 'BP1950' });
-const settingsFor = spec => phaseSettings(spec.parameters);
+const settingsFor = (spec, phases = state.data?.phases ?? []) => phaseSettings(spec.parameters, phases);
 const savedSignature = saved => JSON.stringify({ phases: saved.parameters.phases.map(phase => phaseCopy(phase, saved.parameters)), events: saved.events.map(eventCopy),
-  settings: settingsFor(saved), sampling: saved.parameters.sampling });
+  settings: settingsFor(saved, saved.parameters.phases), sampling: saved.parameters.sampling });
 const number = value => value.toLocaleString(undefined, { maximumFractionDigits: 1 });
 
 export function initPhaseRun() {
@@ -130,7 +130,7 @@ export function initPhaseRun() {
     delta.value = data.settings.delta_scale ?? ''; delta.placeholder = 'Auto from phase prior time scales';
     delta.addEventListener('input', () => update({ delta_scale: delta.value === '' ? null : Number(delta.value) }));
     deltaLabel.append(delta); fields.append(deltaLabel); panel.append(fields);
-    panel.append(node('p', 'When card ordering is enabled, adjacent phases connect the older phase’s younger (or sole) anchor to the younger phase’s older anchor. Delta has a positive half-normal prior; it measures anchor separation and is a phase gap only for end-to-start ordering. Downstream locations are derived; only chain roots retain independent location priors.', 'help'));
+    panel.append(node('p', 'When connections are enabled, each directed connection links its source phase’s younger (or sole) anchor to its target phase’s older anchor. Delta has a positive half-normal prior; it measures anchor separation and is a phase gap only for end-to-start ordering. Downstream locations are derived; only chain roots retain independent location priors.', 'help'));
     panel.append(node('p', 'Blank phase priors use the labelled measurements: location mean = mean measurement centers; reference time scale = max(center range, median measurement SD). Positive scale has a log-normal prior with log SD 0.75 and reference sigma 0.2 × time scale (uniform width = √12 × reference sigma). Auto delta scale uses the larger time scale of adjacent phases. Review priors for your model.', 'help'));
     panel.append(samplingControls(data.sampling, sampling => update({ sampling })));
     const status = node('p', running ? 'Inference submitted. Progress, cancellation and messages are above the tabs.' : message || error(data) || '', 'help');

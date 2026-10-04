@@ -1,9 +1,10 @@
 import { projectState as state } from "./project-state.js";
-import { phaseAnchors, phaseSettings, anchorError } from './phase-settings.js';
+import { phaseAnchors, phaseSettings, phaseEdges, anchorError } from './phase-settings.js';
+import { phaseCanvas } from './phase-canvas.js';
 
 // Visual profiles only. The inference adapter consumes state.data.phases:
-// { id, label, distribution, order, parameters, anchors }. No pixel positions or inferred
-// boundaries are part of a PhaseSpec. Add renderers here without changing cards.
+// Cards retain positions for presentation; phaseCopy excludes them from engine specs.
+// Directed edges use stable IDs, never screen position or the card list order.
 const profiles = {
   uniform: { label: "Uniform", width: () => 1 },
   normal: { label: "Gaussian / Normal", width: t => Math.exp(-.5 * ((t - .5) / .15) ** 2) },
@@ -37,23 +38,46 @@ export function initPhase() {
   const add = document.getElementById("add-phase");
   const status = document.getElementById("phase-status");
   const orderToggle = document.getElementById('phase-ordered');
-  let ownChange = false, drag = null;
+  let ownChange = false;
   let projectDocument = state.data;
   const collapsed = new Set();
   const specs = () => state.data?.phases ?? [];
-  // Saved semantic order remains oldest-first; display younger above older.
-  const visualSpecs = () => [...specs()].reverse();
-  function commit(phases) {
+  const edges = () => phaseEdges(specs(), state.data?.phase_model?.parameters);
+  function setEdges(value) { commit(specs(), value); }
+  const surface = phaseCanvas(canvas, list, status, {
+    phases: specs, edges, busy: () => state.busy,
+    move: (id, position) => {
+      update(id, { position });
+      const card = [...list.children].find(item => item.dataset.phaseId === id);
+      card.style.left = `${position.x}px`; card.style.top = `${position.y}px`;
+      status.textContent = 'Panel moved; model relationships unchanged.';
+    },
+    connect: (source, target) => {
+      const current = edges();
+      if (![source, target].every(id => specs().some(phase => phase.id === id))) return 'Both phases must exist.';
+      if (source === target) return 'A phase cannot connect to itself.';
+      if (current.some(edge => edge.source === source || edge.target === target)) return 'Only chains are supported: one predecessor and one successor per phase.';
+      let id = target;
+      while (id) {
+        if (id === source) return 'Connections cannot form a cycle.';
+        id = current.find(edge => edge.source === id)?.target;
+      }
+      setEdges([...current, { source, target }]); return null;
+    },
+    remove: edge => setEdges(edges().filter(item => item.source !== edge.source || item.target !== edge.target)),
+  });
+  function commit(phases, connections = edges()) {
     ownChange = true;
-    state.setPhases(phases);
-    ownChange = false;
+    const ids = new Set(phases.map(phase => phase.id));
+    try { state.setPhaseCanvas(phases, connections.filter(edge => ids.has(edge.source) && ids.has(edge.target))); }
+    finally { ownChange = false; }
   }
   function update(id, change) {
     commit(specs().map(phase => phase.id === id ? { ...phase, ...change } : phase));
   }
   function announce(id) {
     const phase = specs().find(item => item.id === id);
-    status.textContent = `${phase.label}, position ${phase.order + 1} of ${specs().length}, counted from oldest at the bottom.`;
+    status.textContent = `${phase.label}. Connect its top output to the bottom input of a younger phase.`;
   }
   function render() {
     for (const id of collapsed) if (!specs().some(phase => phase.id === id)) collapsed.delete(id);
@@ -62,26 +86,12 @@ export function initPhase() {
     add.disabled = !state.data || specs().length >= 100;
     orderToggle.checked = phaseSettings(state.data?.phase_model?.parameters).ordered;
     orderToggle.disabled = !state.data || state.busy;
-    for (const phase of visualSpecs()) {
+    for (const phase of specs()) {
       const card = node("li", "phase-card");
       card.dataset.phaseId = phase.id;
       const grip = node("button", "phase-grip", "⠿");
       grip.type = "button";
-      grip.setAttribute("aria-label", `Move ${phase.label}; arrow up or down to reorder`);
-      grip.title = "Drag vertically, or use arrow keys, to reorder";
-      grip.addEventListener("pointerdown", event => startDrag(event, phase.id, card));
-      grip.addEventListener("keydown", event => {
-        if (!["ArrowUp", "ArrowDown"].includes(event.key) || drag || state.busy) return;
-        event.preventDefault();
-        const phases = [...specs()];
-        const index = phases.findIndex(item => item.id === phase.id);
-        const target = Math.max(0, Math.min(phases.length - 1, index + (event.key === "ArrowUp" ? 1 : -1)));
-        if (target === index) return;
-        phases.splice(target, 0, phases.splice(index, 1)[0]);
-        commit(phases); render();
-        [...list.children].find(item => item.dataset.phaseId === phase.id).querySelector("button").focus();
-        announce(phase.id);
-      });
+      grip.setAttribute("aria-label", `Move ${phase.label} on canvas`);
       const controls = node("div", "phase-fields");
       controls.id = `phase-fields-${phase.id}`;
       const content = node('div', 'phase-content');
@@ -95,9 +105,8 @@ export function initPhase() {
         toggle.title = `${closed ? 'Expand' : 'Collapse'} phase settings`;
       }
       toggle.addEventListener('click', () => {
-        if (drag) return;
         if (collapsed.has(phase.id)) collapsed.delete(phase.id); else collapsed.add(phase.id);
-        refreshCollapse();
+        refreshCollapse(); surface.draw();
       });
       content.append(toggle, controls); refreshCollapse();
       const nameLabel = node("label", "", "Phase name");
@@ -106,8 +115,9 @@ export function initPhase() {
       input.maxLength = 120;
       input.addEventListener("input", () => {
         update(phase.id, { label: input.value });
-        grip.setAttribute("aria-label", `Move ${input.value}; arrow up or down to reorder`);
+        grip.setAttribute("aria-label", `Move ${input.value} on canvas`);
         toggle.textContent = input.value;
+        surface.draw();
       });
       nameLabel.append(input);
       const familyLabel = node("label", "", "Distribution");
@@ -171,84 +181,30 @@ export function initPhase() {
       card.append(grip, node("span", "phase-order", String(phase.order + 1)), content, density(phase.distribution));
       list.append(card);
     }
+    surface.bind();
   }
-  function startDrag(event, id, card) {
-    if (event.button !== 0 || state.busy || drag) return;
-    event.preventDefault();
-    event.currentTarget.focus();
-    drag = { id, card, grip: event.currentTarget, pointer: event.pointerId, offset: event.clientY - card.getBoundingClientRect().top,
-      phases: visualSpecs(), original: visualSpecs().map(item => item.id).join() };
-    drag.grip.setPointerCapture(event.pointerId);
-    card.classList.add("dragging");
-    document.addEventListener("pointermove", moveDrag);
-    document.addEventListener("pointerup", finishDrag);
-    document.addEventListener("pointercancel", cancelDrag);
-    document.addEventListener("keydown", escapeDrag);
-    window.addEventListener("blur", cancelDrag);
-  }
-  function moveDrag(event) {
-    if (!drag || event.pointerId !== drag.pointer) return;
-    event.preventDefault();
-    const bounds = canvas.getBoundingClientRect();
-    if (event.clientY < bounds.top + 35) canvas.scrollTop -= 12;
-    if (event.clientY > bounds.bottom - 35) canvas.scrollTop += 12;
-    const y = event.clientY - list.getBoundingClientRect().top;
-    const others = [...list.children].filter(card => card !== drag.card);
-    const index = others.filter(card => y > card.offsetTop + card.offsetHeight / 2).length;
-    const current = drag.phases.findIndex(phase => phase.id === drag.id);
-    if (index !== current) {
-      const previous = new Map(others.map(card => [card, card.offsetTop]));
-      drag.phases.splice(index, 0, drag.phases.splice(current, 1)[0]);
-      list.insertBefore(drag.card, others[index] ?? null);
-      drag.grip.setPointerCapture(drag.pointer);
-      if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-        others.forEach(card => card.animate([
-          { transform: `translateY(${previous.get(card) - card.offsetTop}px)` }, { transform: "translateY(0)" },
-        ], { duration: 160, easing: "ease-out" }));
-      }
-      [...list.children].forEach((card, order) => { card.querySelector(".phase-order").textContent = list.children.length - order; });
-    }
-    drag.card.style.transform = `translateY(${y - drag.card.offsetTop - drag.offset}px)`;
-  }
-  function cleanup() {
-    document.removeEventListener("pointermove", moveDrag);
-    document.removeEventListener("pointerup", finishDrag);
-    document.removeEventListener("pointercancel", cancelDrag);
-    document.removeEventListener("keydown", escapeDrag);
-    window.removeEventListener("blur", cancelDrag);
-    drag = null;
-  }
-  function finishDrag(event) {
-    if (!drag || event.pointerId !== drag.pointer) return;
-    const { id, phases, original } = drag;
-    cleanup();
-    if (phases.map(item => item.id).join() !== original) commit([...phases].reverse());
-    render();
-    [...list.children].find(item => item.dataset.phaseId === id)?.querySelector("button").focus({ preventScroll: true });
-    announce(id);
-  }
-  function cancelDrag() { if (drag) { cleanup(); render(); } }
-  function escapeDrag(event) { if (event.key === "Escape") { event.preventDefault(); cancelDrag(); } }
   state.addEventListener("change", () => {
     if (!ownChange) {
       if (projectDocument !== state.data) { projectDocument = state.data; collapsed.clear(); }
-      cancelDrag(); render();
+      surface.cancel(); render();
     }
   });
   orderToggle.addEventListener('change', () => {
     if (!state.data || state.busy) return;
     const model = state.data.phase_model ?? { parameters: {} };
     ownChange = true;
-    try { state.setPhaseModel({ ...model, parameters: { ...model.parameters, ordered: orderToggle.checked } }); }
+    try { state.setPhaseModel({ ...model, parameters: { ...model.parameters, edges: edges(), ordered: orderToggle.checked } }); }
     finally { ownChange = false; }
   });
   add.addEventListener("click", () => {
     if (state.busy || !state.data || specs().length >= 100) return;
     const phase = { id: `phase-${crypto.randomUUID()}`, label: `Phase ${specs().length + 1}`,
-      distribution: "uniform", order: specs().length, parameters: {}, anchors: [.5] };
+      distribution: "uniform", order: specs().length, parameters: {}, anchors: [.5],
+      position: { x: specs().length ? Math.min(100000, Math.max(...specs().map(item => item.position?.x ?? 50)) + 480) : 50,
+        y: specs().length ? Math.max(25, Math.min(...specs().map(item => item.position?.y ?? 50)) - 150) : 50 } };
     commit([...specs(), phase]); render();
-    list.firstElementChild.scrollIntoView({ block: "nearest" });
-    list.firstElementChild.querySelector("input").focus({ preventScroll: true });
+    list.lastElementChild.scrollIntoView({ block: "nearest", inline: "nearest" });
+    list.lastElementChild.querySelector("input").focus({ preventScroll: true });
     announce(phase.id);
   });
   render();

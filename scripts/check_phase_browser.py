@@ -139,24 +139,43 @@ async def main():
                     if(!decoded.ok)throw Error(await decoded.text());
                     const restored=await decoded.json();state.replace(restored);
                     restored.phase_model.saved_run.events[0].parameters.mean===2500 && restored.events[0].parameters.mean===2510""")
-                # Collapsing is display state only; reordering still uses the grip.
+                # Canvas movement changes pixels, never ordering or fitted inputs.
                 await js("""window.beforeCollapse=JSON.stringify(state.data);window.beforeDirty=state.dirty;
                     document.querySelectorAll('.phase-toggle').forEach(button=>button.click());""")
-                assert await js("document.querySelectorAll('.phase-card.collapsed').length===2 && document.querySelectorAll('.phase-card .phase-fields[hidden]').length===2 && JSON.stringify(state.data)===beforeCollapse && state.dirty===beforeDirty")
-                await js("document.querySelector('[data-phase-id=\"p0\"] .phase-grip').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowUp',bubbles:true}))")
-                assert await js("state.data.phases[1].id==='p0' && document.querySelectorAll('.phase-card.collapsed').length===2")
-                # Move the top collapsed card below the other using real pointer events.
-                bounds = await js("""[...document.querySelectorAll('.phase-card')].map(card=>{
-                    const grip=card.querySelector('.phase-grip').getBoundingClientRect(), box=card.getBoundingClientRect();
-                    return {x:grip.x+grip.width/2,y:grip.y+grip.height/2,bottom:box.bottom};})""")
-                await call('Input.dispatchMouseEvent', type='mousePressed', x=bounds[0]['x'], y=bounds[0]['y'], button='left', clickCount=1)
-                await call('Input.dispatchMouseEvent', type='mouseMoved', x=bounds[0]['x'], y=bounds[1]['bottom'] - 5, button='left', buttons=1)
-                await call('Input.dispatchMouseEvent', type='mouseReleased', x=bounds[0]['x'], y=bounds[1]['bottom'] - 5, button='left', clickCount=1)
-                assert await js("state.data.phases[0].id==='p0' && document.querySelectorAll('.phase-card.collapsed').length===2")
-                await js("document.querySelector('[data-phase-id=\"p0\"] .phase-toggle').click()")
-                assert await js("document.querySelector('[data-phase-id=\"p0\"] .phase-toggle').getAttribute('aria-expanded')==='true' && !document.querySelector('[data-phase-id=\"p0\"] .phase-fields').hidden && state.data.phases[0].anchors[0]===.25")
+                assert await js("document.querySelectorAll('.phase-card.collapsed').length===2 && JSON.stringify(state.data)===beforeCollapse && state.dirty===beforeDirty")
+                await js("""window.edgeBefore=document.querySelector('.phase-edge').getAttribute('d');
+                    document.querySelector('[data-phase-id="p0"] .phase-grip').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));""")
+                assert await js("state.data.phases[0].id==='p0' && state.data.phases[0].position.x===70 && state.data.phase_model.parameters.edges[0].source==='p0' && document.querySelector('.phase-edge').getAttribute('d')!==edgeBefore")
+                # Real pointer drag on a collapsed card, with its connector following.
+                await js("document.querySelector('[data-phase-id=\"p1\"]').scrollIntoView({block:'center',inline:'nearest'})")
+                bounds = await js("""(()=>{const box=document.querySelector('[data-phase-id="p1"] .phase-grip').getBoundingClientRect();return {x:box.x+box.width/2,y:box.y+box.height/2};})()""")
+                await call('Input.dispatchMouseEvent', type='mousePressed', x=bounds['x'], y=bounds['y'], button='left', clickCount=1)
+                await call('Input.dispatchMouseEvent', type='mouseMoved', x=bounds['x']+80, y=bounds['y']+30, button='left', buttons=1)
+                await call('Input.dispatchMouseEvent', type='mouseReleased', x=bounds['x']+80, y=bounds['y']+30, button='left', clickCount=1)
+                assert await js("state.data.phases[1].position.x===130 && state.data.phases[0].id==='p0' && state.data.phase_model.parameters.edges.length===1")
+                # Delete the edge, position the nodes conveniently, then drag output to input.
+                await js("""document.querySelector('.phase-connections button').click();
+                    const phases=structuredClone(state.data.phases);phases[0].position={x:50,y:230};phases[1].position={x:50,y:40};
+                    state.setPhaseCanvas(phases,[]);document.querySelector('#phase-canvas').scrollTop=0;""")
+                assert await js("state.data.phase_model.parameters.edges.length===0 && document.querySelectorAll('.phase-edge').length===0")
+                ports = await js("""['[data-phase-id="p0"] .phase-output','[data-phase-id="p1"] .phase-input'].map(selector=>{const b=document.querySelector(selector).getBoundingClientRect();return {x:b.x+b.width/2,y:b.y+b.height/2};})""")
+                await call('Input.dispatchMouseEvent', type='mousePressed', x=ports[0]['x'], y=ports[0]['y'], button='left', clickCount=1)
+                await call('Input.dispatchMouseEvent', type='mouseMoved', x=ports[1]['x'], y=ports[1]['y'], button='left', buttons=1)
+                await call('Input.dispatchMouseEvent', type='mouseReleased', x=ports[1]['x'], y=ports[1]['y'], button='left', clickCount=1)
+                assert await js("state.data.phase_model.parameters.edges.length===1 && state.data.phase_model.parameters.edges[0].target==='p1' && document.querySelectorAll('.phase-edge').length===1")
+                # Reject a cycle using keyboard-accessible ports.
+                await js("""document.querySelector('[data-phase-id="p1"] .phase-output').click();document.querySelector('[data-phase-id="p0"] .phase-input').click();""")
+                assert await js("state.data.phase_model.parameters.edges.length===1 && document.querySelector('#phase-status').textContent.includes('cycle')")
+                # Archive round trip retains positions/IDs/edges and saved results.
+                assert await js("""const beforeCanvas=JSON.stringify(state.data);
+                    const savedCanvas=await originalFetch('/api/projects/encode',{method:'POST',headers:{'Content-Type':'application/json'},body:beforeCanvas});
+                    if(!savedCanvas.ok)throw Error(await savedCanvas.text());
+                    const loadedCanvas=await originalFetch('/api/projects/decode',{method:'POST',body:await savedCanvas.blob()});
+                    if(!loadedCanvas.ok)throw Error(await loadedCanvas.text());
+                    const restoredCanvas=await loadedCanvas.json();
+                    JSON.stringify(restoredCanvas.phases)===JSON.stringify(state.data.phases) && JSON.stringify(restoredCanvas.phase_model)===JSON.stringify(state.data.phase_model)""")
                 assert not errors, errors
-                print('PASS: phase workflow, collapsible cards, keyboard and pointer grip reordering. No MCMC.')
+                print('PASS: phase workflow, canvas movement/connections/deletion, cycle rejection and archive round trip. No MCMC.')
         finally:
             for process in (browser, server):
                 if process:

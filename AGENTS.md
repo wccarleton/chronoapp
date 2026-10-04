@@ -22,7 +22,7 @@
 - IPPP uses the full observation window and count likelihood, returning events/year.
 - Do not normalize intensity into a density or describe it as demographic population.
 - Datum metadata does not itself convert dates; validate supported input conventions.
-- Phase order is semantic, oldest-first; its canvas places older phases lower.
+- Phase precedence uses explicit source/target edges; canvas positions are visual only. Initially place older phases lower, with outputs above and inputs below.
 - Phase graphics are schematic and do not define durations, gaps or inference.
 - Saved runs retain inputs, settings, plot data and diagnostics, not full chains.
 - Changed scientific inputs must invalidate displayed results; saved runs remain loadable.

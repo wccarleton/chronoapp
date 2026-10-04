@@ -9,7 +9,7 @@ from chronologer.phases import waic
 from .measurements import measurements
 from .posterior_plots import marginal, posterior_plots
 from .mcmc_diagnostics import build_diagnostics
-from ..phase_settings import anchors_for, ordered
+from ..phase_settings import anchors_for, connections
 
 
 def specification(request):
@@ -22,11 +22,10 @@ def specification(request):
             prior_scale=p.get('prior_scale'))
     settings = request['settings']
     orders = []
-    if ordered(settings):
-        for a, b in zip(request['phases'], request['phases'][1:]):
-            anchors = (anchors_for(a, settings)[-1], anchors_for(b, settings)[0])
-            orders.append(chronologer.Order(a['label'], b['label'], anchors,
-                                           settings.get('delta_scale')))
+    for a, b in connections(request['phases'], settings):
+        anchors = (anchors_for(a, settings)[-1], anchors_for(b, settings)[0])
+        orders.append(chronologer.Order(a['label'], b['label'], anchors,
+                                       settings.get('delta_scale')))
     return specs, orders
 
 

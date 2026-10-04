@@ -645,10 +645,19 @@ select {
 .phase-canvas { position:relative; max-height:65vh; min-height:250px; overflow:auto; padding:16px 20px 16px 42px; border:1px solid var(--line); border-radius:6px; background:repeating-linear-gradient(to bottom, transparent 0, transparent 39px, var(--line) 40px); }
 .phase-canvas::before { content:""; position:absolute; top:12px; bottom:12px; left:21px; border-left:1px solid var(--line); }
 .phase-time-label { font-size:11px; color:var(--muted); }
-.phase-list { position:relative; list-style:none; padding:0; margin:16px 0; display:flex; flex-direction:column; gap:14px; }
+.phase-list { position:relative; list-style:none; padding:0; margin:16px 0; min-height:400px; }
 .phase-card { position:relative; display:grid; grid-template-columns:28px 20px minmax(0,1fr) 80px; align-items:center; gap:12px; min-height:160px; padding:14px; border:1px solid var(--line); border-left:3px solid var(--accent); border-radius:6px; background:#fcfdfd; }
 [data-theme=dark] .phase-card { background:#19242c; }
 .phase-card.dragging { z-index:2; box-shadow:0 8px 24px #0003; border-color:var(--accent); }
+.phase-list .phase-card { position:absolute; width:420px; box-sizing:border-box; }
+.phase-edges { position:absolute; left:42px; top:32px; overflow:visible; pointer-events:none; }
+.phase-edge { fill:none; stroke:var(--accent); stroke-width:2; }
+.phase-edge.pending { stroke-dasharray:6 4; }
+.phase-port { position:absolute; left:calc(50% - 10px); width:20px; height:20px; padding:0; border:2px solid var(--accent); border-radius:50%; background:var(--panel, #fcfdfd); cursor:crosshair; touch-action:none; z-index:3; }
+.phase-output { top:-11px; }
+.phase-input { bottom:-11px; }
+.phase-card.connecting .phase-output { background:var(--accent); }
+.phase-connections { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0; }
 .phase-grip { border:0; background:transparent; color:var(--muted); font-size:25px; padding:6px 0; cursor:grab; touch-action:none; user-select:none; }
 .phase-card.dragging .phase-grip { cursor:grabbing; }
 .phase-order { color:var(--muted); font-size:11px; }
@@ -700,6 +709,7 @@ select {
 @media(max-width:520px) {
   .phase-workspace { padding:12px; }
   .phase-canvas { padding:12px 8px 12px 24px; }
+  .phase-edges { left:24px; top:28px; }
   .phase-canvas::before { left:10px; }
   .phase-card { grid-template-columns:24px minmax(0,1fr) 48px; padding:8px; gap:8px; }
   .phase-card.collapsed { grid-template-columns:24px minmax(0,1fr) 48px; }

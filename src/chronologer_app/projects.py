@@ -13,7 +13,7 @@ from . import __version__
 from chronologer.calcurves import DEFAULT_CURVES
 from .saved_results import validate_saved_run
 from .sampling import validate_saved_sampling
-from .phase_settings import validate_anchors
+from .phase_settings import validate_anchors, connections
 
 MAX_BYTES = 64 * 1024 * 1024
 MAX_CSV_BYTES = 16 * 1024 * 1024
@@ -93,7 +93,7 @@ def validate_project(project):
     phase_ids = set()
     for index, phase in enumerate(phases):
         if (not isinstance(phase, dict) or not {"id", "label", "distribution", "order", "parameters"} <= set(phase)
-                or set(phase) - {"id", "label", "distribution", "order", "parameters", "anchors"}):
+                or set(phase) - {"id", "label", "distribution", "order", "parameters", "anchors", "position"}):
             raise ValueError("Each phase requires id, label, distribution, order, and parameters.")
         _text(phase["id"], "Phase ID")
         _text(phase["label"], "Phase label")
@@ -107,15 +107,21 @@ def validate_project(project):
         if not isinstance(phase["parameters"], dict):
             raise ValueError("Phase parameters must be a JSON object.")
         validate_anchors(phase)
+        if 'position' in phase:
+            position = phase['position']
+            if (not isinstance(position, dict) or set(position) != {'x', 'y'}
+                    or any(type(v) not in (int, float) or not math.isfinite(v) or not 0 <= v <= 100000 for v in position.values())):
+                raise ValueError('Phase position requires finite x/y canvas coordinates in [0, 100000].')
     if 'phase_model' in project:
         from .api.phases import PhaseSettings
         model = project['phase_model']
         if not isinstance(model, dict) or not {'parameters'} <= set(model) or set(model) - {'parameters', 'saved_run'}:
             raise ValueError('Phase model requires parameters and an optional saved_run.')
         params = model['parameters']
-        if not isinstance(params, dict) or set(params) - {'anchors', 'ordered', 'delta_scale', 'sampling'}:
+        if not isinstance(params, dict) or set(params) - {'anchors', 'ordered', 'delta_scale', 'sampling', 'edges'}:
             raise ValueError('Invalid phase model parameters.')
         PhaseSettings(**{k: v for k, v in params.items() if k != 'sampling'})
+        connections(phases, params)
         validate_saved_sampling(params)
         if 'saved_run' in model:
             validate_saved_run(model['saved_run'])

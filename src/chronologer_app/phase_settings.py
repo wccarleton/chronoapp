@@ -15,6 +15,34 @@ def ordered(settings):
     return value if value is not None else settings.get('anchors') != 'none'
 
 
+def connections(phases, settings):
+    """Resolve explicit ID edges, preserving legacy oldest-first chains."""
+    edges = settings.get('edges')
+    if edges is None:
+        return list(zip(phases, phases[1:])) if ordered(settings) else []
+    if not isinstance(edges, list) or len(edges) > 100:
+        raise ValueError('Phase edges must be a list of at most 100 connections.')
+    nodes = {phase['id']: phase for phase in phases}
+    incoming, outgoing = set(), {}
+    pairs = []
+    for edge in edges:
+        if (not isinstance(edge, dict) or set(edge) != {'source', 'target'}
+                or not all(isinstance(edge[k], str) and edge[k] in nodes for k in ('source', 'target'))):
+            raise ValueError('Phase connections require existing source and target IDs.')
+        a, b = edge['source'], edge['target']
+        if a == b or a in outgoing or b in incoming:
+            raise ValueError('Phase connections support only chains, without self-connections or branching.')
+        outgoing[a] = b; incoming.add(b)
+        pairs.append((nodes[a], nodes[b]))
+    for root in outgoing:
+        visited, current = set(), root
+        while current in outgoing:
+            if current in visited:
+                raise ValueError('Phase connections cannot form cycles.')
+            visited.add(current); current = outgoing[current]
+    return pairs if ordered(settings) else []
+
+
 def validate_anchors(phase):
     anchors = phase.get('anchors')
     if anchors is None:  # Legacy cards acquire their anchors from the old preset.
