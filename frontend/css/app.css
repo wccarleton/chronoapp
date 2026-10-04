@@ -652,6 +652,15 @@ select {
 .phase-grip { border:0; background:transparent; color:var(--muted); font-size:25px; padding:6px 0; cursor:grab; touch-action:none; user-select:none; }
 .phase-card.dragging .phase-grip { cursor:grabbing; }
 .phase-order { color:var(--muted); font-size:11px; }
+.phase-content { min-width:0; }
+.phase-toggle { display:flex; align-items:center; gap:8px; width:100%; margin:0 0 12px; padding:4px 0; border:0; background:transparent; color:var(--ink); font:inherit; font-weight:600; text-align:left; overflow-wrap:anywhere; cursor:pointer; }
+.phase-toggle::before { content:"▾"; flex-shrink:0; color:var(--muted); }
+.phase-toggle[aria-expanded=false]::before { content:"▸"; }
+.phase-card.collapsed { grid-template-columns:28px minmax(0,1fr) 80px; min-height:96px; }
+.phase-card.collapsed .phase-order { display:none; }
+.phase-card.collapsed .phase-toggle { margin-bottom:0; }
+.phase-card.collapsed .phase-density { height:72px; }
+.phase-card .phase-fields[hidden] { display:none; }
 .phase-fields { display:grid; gap:10px; }
 .phase-fields label { margin:0; }
 .phase-fields input, .phase-fields select { width:100%; min-width:0; margin-top:5px; padding:7px; border:1px solid var(--line); border-radius:4px; background:transparent; color:var(--ink); font-size:12px; }
@@ -693,6 +702,7 @@ select {
   .phase-canvas { padding:12px 8px 12px 24px; }
   .phase-canvas::before { left:10px; }
   .phase-card { grid-template-columns:24px minmax(0,1fr) 48px; padding:8px; gap:8px; }
+  .phase-card.collapsed { grid-template-columns:24px minmax(0,1fr) 48px; }
   .phase-order { position:absolute; top:4px; left:4px; }
   .phase-density { width:48px; }
   .tabs { overflow-x:auto; }

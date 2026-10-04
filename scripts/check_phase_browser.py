@@ -125,8 +125,24 @@ async def main():
                     if(!decoded.ok)throw Error(await decoded.text());
                     const restored=await decoded.json();state.replace(restored);
                     restored.phase_model.saved_run.events[0].parameters.mean===2500 && restored.events[0].parameters.mean===2510""")
+                # Collapsing is display state only; reordering still uses the grip.
+                await js("""window.beforeCollapse=JSON.stringify(state.data);window.beforeDirty=state.dirty;
+                    document.querySelectorAll('.phase-toggle').forEach(button=>button.click());""")
+                assert await js("document.querySelectorAll('.phase-card.collapsed').length===2 && document.querySelectorAll('.phase-card .phase-fields[hidden]').length===2 && JSON.stringify(state.data)===beforeCollapse && state.dirty===beforeDirty")
+                await js("document.querySelector('[data-phase-id=\"p0\"] .phase-grip').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowUp',bubbles:true}))")
+                assert await js("state.data.phases[1].id==='p0' && document.querySelectorAll('.phase-card.collapsed').length===2")
+                # Move the top collapsed card below the other using real pointer events.
+                bounds = await js("""[...document.querySelectorAll('.phase-card')].map(card=>{
+                    const grip=card.querySelector('.phase-grip').getBoundingClientRect(), box=card.getBoundingClientRect();
+                    return {x:grip.x+grip.width/2,y:grip.y+grip.height/2,bottom:box.bottom};})""")
+                await call('Input.dispatchMouseEvent', type='mousePressed', x=bounds[0]['x'], y=bounds[0]['y'], button='left', clickCount=1)
+                await call('Input.dispatchMouseEvent', type='mouseMoved', x=bounds[0]['x'], y=bounds[1]['bottom'] - 5, button='left', buttons=1)
+                await call('Input.dispatchMouseEvent', type='mouseReleased', x=bounds[0]['x'], y=bounds[1]['bottom'] - 5, button='left', clickCount=1)
+                assert await js("state.data.phases[0].id==='p0' && document.querySelectorAll('.phase-card.collapsed').length===2")
+                await js("document.querySelector('[data-phase-id=\"p0\"] .phase-toggle').click()")
+                assert await js("document.querySelector('[data-phase-id=\"p0\"] .phase-toggle').getAttribute('aria-expanded')==='true' && !document.querySelector('[data-phase-id=\"p0\"] .phase-fields').hidden && state.data.phases[0].anchors[0]===.25")
                 assert not errors, errors
-                print('PASS: per-card anchors, validation, legacy presets, labelled submission, plots, anchor/date invalidation, saved-run viewing and archive roundtrip. No MCMC.')
+                print('PASS: phase workflow, collapsible cards, keyboard and pointer grip reordering. No MCMC.')
         finally:
             for process in (browser, server):
                 if process:

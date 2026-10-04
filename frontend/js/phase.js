@@ -38,6 +38,8 @@ export function initPhase() {
   const status = document.getElementById("phase-status");
   const orderToggle = document.getElementById('phase-ordered');
   let ownChange = false, drag = null;
+  let projectDocument = state.data;
+  const collapsed = new Set();
   const specs = () => state.data?.phases ?? [];
   // Saved semantic order remains oldest-first; display younger above older.
   const visualSpecs = () => [...specs()].reverse();
@@ -54,6 +56,7 @@ export function initPhase() {
     status.textContent = `${phase.label}, position ${phase.order + 1} of ${specs().length}, counted from oldest at the bottom.`;
   }
   function render() {
+    for (const id of collapsed) if (!specs().some(phase => phase.id === id)) collapsed.delete(id);
     list.replaceChildren();
     document.getElementById("phase-empty").hidden = specs().length > 0;
     add.disabled = !state.data || specs().length >= 100;
@@ -80,6 +83,23 @@ export function initPhase() {
         announce(phase.id);
       });
       const controls = node("div", "phase-fields");
+      controls.id = `phase-fields-${phase.id}`;
+      const content = node('div', 'phase-content');
+      const toggle = node('button', 'phase-toggle', phase.label);
+      toggle.type = 'button'; toggle.setAttribute('aria-controls', controls.id);
+      function refreshCollapse() {
+        const closed = collapsed.has(phase.id);
+        card.classList.toggle('collapsed', closed);
+        controls.hidden = closed;
+        toggle.setAttribute('aria-expanded', String(!closed));
+        toggle.title = `${closed ? 'Expand' : 'Collapse'} phase settings`;
+      }
+      toggle.addEventListener('click', () => {
+        if (drag) return;
+        if (collapsed.has(phase.id)) collapsed.delete(phase.id); else collapsed.add(phase.id);
+        refreshCollapse();
+      });
+      content.append(toggle, controls); refreshCollapse();
       const nameLabel = node("label", "", "Phase name");
       const input = node("input", "phase-name");
       input.value = phase.label;
@@ -87,6 +107,7 @@ export function initPhase() {
       input.addEventListener("input", () => {
         update(phase.id, { label: input.value });
         grip.setAttribute("aria-label", `Move ${input.value}; arrow up or down to reorder`);
+        toggle.textContent = input.value;
       });
       nameLabel.append(input);
       const familyLabel = node("label", "", "Distribution");
@@ -147,7 +168,7 @@ export function initPhase() {
       const remove = node('button', 'button secondary', 'Remove phase'); remove.type = 'button';
       remove.addEventListener('click', () => { commit(specs().filter(item => item.id !== phase.id)); render(); });
       controls.append(membership, priors, remove);
-      card.append(grip, node("span", "phase-order", String(phase.order + 1)), controls, density(phase.distribution));
+      card.append(grip, node("span", "phase-order", String(phase.order + 1)), content, density(phase.distribution));
       list.append(card);
     }
   }
@@ -208,7 +229,12 @@ export function initPhase() {
   }
   function cancelDrag() { if (drag) { cleanup(); render(); } }
   function escapeDrag(event) { if (event.key === "Escape") { event.preventDefault(); cancelDrag(); } }
-  state.addEventListener("change", () => { if (!ownChange) { cancelDrag(); render(); } });
+  state.addEventListener("change", () => {
+    if (!ownChange) {
+      if (projectDocument !== state.data) { projectDocument = state.data; collapsed.clear(); }
+      cancelDrag(); render();
+    }
+  });
   orderToggle.addEventListener('change', () => {
     if (!state.data || state.busy) return;
     const model = state.data.phase_model ?? { parameters: {} };
