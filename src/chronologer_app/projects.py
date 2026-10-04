@@ -124,7 +124,7 @@ def validate_project(project):
         if summary["id"] in summary_ids:
             raise ValueError("Summary IDs must be unique.")
         summary_ids.add(summary["id"])
-        if summary["model"] not in ("density", "mixture", 'ippp_gp'):
+        if summary["model"] not in ("density", 'single_density', "mixture", 'ippp_gp'):
             raise ValueError("Unsupported analysis model.")
         if not isinstance(summary["parameters"], dict):
             raise ValueError("Summary parameters must be a JSON object.")

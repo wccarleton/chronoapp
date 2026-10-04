@@ -435,7 +435,7 @@ export function createSummaryPlot(container, result, title) {
   const note = `${modelNote} Dates are expressed in years using the BP1950 datum (before AD 1950). Where radiocarbon determinations are used, they are calibrated as part of modelling using each event’s selected calibration curve.`;
   container.append(element("h3", "", process ? 'Event intensity and posterior event dates · BP1950' : "Model density and posterior event dates · BP1950"));
   const plot = new InteractivePlot(container, {
-    title, subtitle: `${process ? 'GP IPPP' : result.model === "gaussian_mixture" ? "Gaussian mixture" : "Truncated-normal radiocarbon hierarchy"} · Years (BP1950)`, label: process ? 'Event intensity (events/year)' : "Model density (1/year)", base, height: 510,
+    title, subtitle: `${process ? 'GP IPPP' : result.model === "gaussian_mixture" ? "Gaussian mixture" : result.model === 'single_density' ? 'Single truncated-normal density' : "Truncated-normal radiocarbon hierarchy"} · Years (BP1950)`, label: process ? 'Event intensity (events/year)' : "Model density (1/year)", base, height: 510,
     xLabel: "Years (BP1950)", domainUnits: "years (BP1950)",
     visualLegend: { mean: process ? "Posterior mean event intensity" : "Posterior mean model density", events: Boolean(result.marginals?.events?.length) },
     exportNote: `${note} ${result.divergences} divergences.`,

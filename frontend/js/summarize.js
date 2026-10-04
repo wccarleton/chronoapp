@@ -6,10 +6,11 @@ import { pagination, PAGE_SIZE } from "./pagination.js";
 import { DEFAULT_SAMPLING, samplingFor, samplingError, samplingControls } from "./sampling-settings.js";
 
 // Latest plot-ready result persists per summary; raw chains are never serialized.
-const models = { density: "Density", mixture: "Mixture" };
+const models = { single_density: "Single density", mixture: "Gaussian mixture" };
+const modelFor = summary => summary.model === "density" ? "single_density" : summary.model;
 const modelGlosses = {
   ippp_gp: 'A Gaussian process describes log event intensity on a finite grid. The model fits event dates jointly with the full point-process likelihood over your declared observation period, including empty time and the total event count. The curve is events per year, not a normalized density or a demographic estimate. Assumes complete observation throughout the period; sampling effort, preservation and selection are not modeled.',
-  density: "Assumes event dates follow one truncated-normal model within your calendar bounds. Fits its location and scale jointly with each event’s date using the radiocarbon measurements and calibration curve. Produces the model density averaged over the posterior, a pointwise 95% credible band, parameter posteriors, and model-conditioned event-date posteriors. Location and scale are the underlying normal’s parameters; truncation can make the model’s actual mean and SD differ.",
+  single_density: "Assumes event dates follow one truncated-normal model within your calendar bounds. Fits its location and scale jointly with event dates using normal, uniform, or radiocarbon measurements. Each radiocarbon event retains its curve and uses the shared cubic-spline likelihood with combined curve and laboratory error. Produces posterior mean density, a pointwise 95% band, parameter posteriors and model-conditioned event-date posteriors. Location and scale describe the underlying normal; truncation can change its actual moments.",
   mixture: "Maximum modes sets the maximum complexity available to the density model. The model estimates weights for all available Gaussian components and can give unnecessary components negligible weight. The displayed density is the quantity of interest; individual mixture components should not automatically be interpreted as archaeological groups or phases. Measurement uncertainty is modeled separately from event times.",
 };
 // Explicit starting suggestions in BP1950/year units, shown and editable before fitting.
@@ -20,7 +21,7 @@ const settingsFor = summary => summary.model === 'ippp_gp'
   : summary.model === "mixture"
   ? { K_max: summary.parameters.K_max === undefined ? 5 : summary.parameters.K_max }
   : Object.fromEntries(Object.entries(defaults).map(([key, value]) => [key, summary.parameters[key] === undefined ? value : summary.parameters[key]]));
-const signature = summary => JSON.stringify([summary.model, summary.events, settingsFor(summary), samplingFor(summary)]);
+const signature = summary => JSON.stringify([modelFor(summary), summary.events, settingsFor(summary), samplingFor(summary)]);
 function node(tag, text, className) {
   const element = document.createElement(tag);
   if (text !== undefined) element.textContent = text;
@@ -85,10 +86,10 @@ export function initSummarize({ process = false } = {}) {
       const modelLabel = node("label", "Model");
       const select = node("select", undefined, "phase-distribution");
       for (const [value, label] of Object.entries(availableModels)) select.append(new Option(label, value));
-      select.value = summary.model;
+      select.value = modelFor(summary);
       select.addEventListener("change", () => { update(summary.id, { model: select.value }); render(); });
       modelLabel.append(select); fields.append(nameLabel, modelLabel);
-      const gloss = node("p", modelGlosses[summary.model], "help summary-model-gloss");
+      const gloss = node("p", modelGlosses[modelFor(summary)], "help summary-model-gloss");
       gloss.id = `model-gloss-${summary.id}`;
       select.setAttribute("aria-describedby", gloss.id);
       card.append(fields, gloss, node("p", `${summary.events.length} events · saved copies, independent of later dataset edits`, "help"));
@@ -171,8 +172,8 @@ export function initSummarize({ process = false } = {}) {
           label.append(input); fitSettings.append(label);
         }
         fitSettings.append(node('p', 'Benchmark priors: baseline log rate Normal(log(10 / period length), 1.5); GP amplitude HalfNormal(1); length scale LogNormal(log(period length / 5), 0.5), with an exponentiated-quadratic covariance. Intensity is linearly interpolated between positive grid-node rates; its integral uses that same interpolation. Priors can be overridden in the engine API. Check grid-resolution and prior sensitivity before scientific use.', 'help'));
-      } else if (summary.model === "density") {
-        fitSettings.append(node("p", "Truncated-normal model density. All events share these calendar bounds and one calibration curve. Review the bounds and hyperpriors before fitting.", "help"));
+      } else if (modelFor(summary) === "single_density") {
+        fitSettings.append(node("p", "Single truncated-normal density. All events share these calendar bounds; each radiocarbon event retains its own calibration curve. Review the bounds and hyperpriors before fitting.", "help"));
         for (const [key, caption] of Object.entries({ older: "Older bound · years (BP1950)", younger: "Younger bound · years (BP1950)", mean: "Location hyperprior mean · years (BP1950)", mean_sd: "Location hyperprior SD (years)", sd_scale: "Scale hyperprior: half-normal scale (years)" })) {
           const label = node("label", caption), input = node("input");
           input.type = "number"; input.step = "any"; input.dataset.setting = key;
@@ -196,7 +197,7 @@ export function initSummarize({ process = false } = {}) {
       }
       const fitStatus = node("p", running.has(summary.id) ? "Inference submitted. Progress, cancellation and messages are above the tabs; you can keep working elsewhere." : failures.get(summary.id) ?? "", "summary-fit-status help");
       fitStatus.setAttribute("role", "status");
-      const run = button(process ? 'Fit GP IPPP' : summary.model === "mixture" ? "Fit mixture" : "Fit density", async () => {
+      const run = button(process ? 'Fit GP IPPP' : summary.model === "mixture" ? "Fit mixture" : "Fit single density", async () => {
         const current = specs().find(s => s.id === summary.id);
         if (running.has(summary.id) || !current) return;
         const settings = settingsFor(current);
@@ -214,11 +215,8 @@ export function initSummarize({ process = false } = {}) {
         if (mixture && (!Number.isInteger(settings.K_max) || settings.K_max < 1 || settings.K_max > 20)) {
           fitStatus.textContent = "Maximum modes must be an integer from 1 to 20."; return;
         }
-        if ((mixture || ippp) && (!current.events.length || current.events.some(e => !["calrcarbon", "normal", "uniform"].includes(e.distribution) || (e.datum ?? "BP1950") !== "BP1950"))) {
+        if (!current.events.length || current.events.some(e => !["calrcarbon", "normal", "uniform"].includes(e.distribution) || (e.datum ?? "BP1950") !== "BP1950")) {
           fitStatus.textContent = "Add normal, uniform, or radiocarbon measurements using BP1950 before fitting."; return;
-        }
-        if (!mixture && !ippp && (!current.events.length || current.events.some(e => e.distribution !== "calrcarbon"))) {
-          fitStatus.textContent = "Add radiocarbon events before fitting; other event distributions are not supported in this benchmark."; return;
         }
         if (!mixture && !ippp && (!Object.values(settings).every(v => typeof v === "number" && Number.isFinite(v))
             || settings.older <= settings.younger || settings.mean_sd <= 0 || settings.sd_scale <= 0)) {
@@ -226,21 +224,19 @@ export function initSummarize({ process = false } = {}) {
         }
         // Record the exact visible settings used, including starting suggestions.
         const parameters = { ...settings, sampling };
-        update(current.id, { parameters });
+        update(current.id, { parameters, model: modelFor(current) });
         const token = { id: current.id, generation, signature: signature(current) };
         running.set(current.id, token); results.delete(current.id); failures.delete(current.id); render();
         try {
-          const payload = (mixture || ippp) ? { ...(ippp ? { observation: settings } : { K_max: settings.K_max }), events: current.events.map(e => ({
-            id: e.id, distribution: e.distribution, parameters: e.parameters, datum: e.datum ?? "BP1950",
-          })) } : { settings, determinations: current.events.map(e => ({
-            id: e.id, age: e.parameters.c14_mean, error: e.parameters.c14_err, curve: e.parameters.curve,
-          })) };
+          const payload = { ...(ippp ? { observation: settings } : mixture ? { K_max: settings.K_max } : { settings }),
+            events: current.events.map(e => ({ id: e.id, distribution: e.distribution,
+              parameters: e.parameters, datum: e.datum ?? "BP1950" })) };
           const result = await runDensity({ ...payload, sampling }, `${state.data.metadata.project_name} / ${current.label}`);
           const latest = specs().find(s => s.id === token.id);
           if (generation === token.generation && latest && signature(latest) === token.signature) {
             results.set(token.id, { signature: token.signature, result });
             const saved_run = { id: crypto.randomUUID(), created_at: new Date().toISOString(),
-              model: latest.model, events: structuredClone(latest.events), parameters,
+              model: modelFor(latest), events: structuredClone(latest.events), parameters,
               result };
             commit(specs().map(s => s.id === token.id ? { ...s, saved_run } : s));
           }
@@ -313,7 +309,7 @@ export function initSummarize({ process = false } = {}) {
   add.addEventListener("click", () => {
     if (!state.data || state.busy || specs().length >= 100) return;
     commit([...specs(), { id: `${kind}-${crypto.randomUUID()}`, label: `${process ? 'Process' : 'Summary'} ${specs().length + 1}`,
-      model: process ? 'ippp_gp' : "density", events: [], parameters: { sampling: { ...DEFAULT_SAMPLING } } }]);
+      model: process ? 'ippp_gp' : "single_density", events: [], parameters: { sampling: { ...DEFAULT_SAMPLING } } }]);
     render(); list.lastElementChild.querySelector("input").focus();
   });
   render();

@@ -221,16 +221,20 @@ use a separate fresh engine worker per curve, preserving input order and binding
 each plot/export to its matching curve.
 
 Summary uses saved copies from shared project state, rather than Calibration's
-DOM or derived plot arrays. Gaussian mixture inference accepts BP1950 normal,
+DOM or derived plot arrays. Single-density and Gaussian mixture inference accept BP1950 normal,
 uniform, and radiocarbon events; each radiocarbon input uses its selected installed
-curve through the distribution's spline references. The single-density API still
-requires one shared curve.
+curve through the distribution's spline references. New single-density fits use
+the same measurement adapter as mixtures, with common explicit calendar bounds
+and the existing location/scale hyperpriors. The legacy `/density` endpoints
+remain radiocarbon-only and retain their original likelihood and shared-curve requirement.
 Other distributions remain preserved in projects but cannot yet be fitted.
 Arbitrary curves and calibration-curve mixtures are not implemented.
 
 The Summarize prototype saves an optional `data/summaries.json` entry (root
 `summaries` in the API document). Each specification has `id`, `label`, `model`
-(`density` or `mixture`), `events`, and a reserved `parameters` object. These are
+(`single_density` or `mixture`), `events`, and a reserved `parameters` object. Legacy
+`density` specifications and their saved runs remain readable without rewriting
+historical results; rerunning uses the new single-density adapter. These are
 model-family intentions, not executable configurations or implicit priors.
 The UI supports up to 100 summaries with up to 100 events each. Selected events
 are independent copies of project event records, including their per-event curve;

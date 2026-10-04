@@ -30,7 +30,7 @@ def validate_saved_run(run):
         require(timestamp.tzinfo is not None, 'timestamp timezone')
     except (AttributeError, TypeError, ValueError):
         raise ValueError('Invalid saved Summary result: timestamp') from None
-    require(run['model'] in ('density', 'mixture', 'ippp_gp') and isinstance(run['parameters'], dict), 'model/settings')
+    require(run['model'] in ('density', 'single_density', 'mixture', 'ippp_gp') and isinstance(run['parameters'], dict), 'model/settings')
     process = run['model'] == 'ippp_gp'
     require(isinstance(run['events'], list) and 1 <= len(run['events']) <= 100, 'events')
     require(all(isinstance(e, dict) for e in run['events']), 'event records')
@@ -38,7 +38,7 @@ def validate_saved_run(run):
     curve_key = 'intensity' if process else 'density'
     fields = {'model', 'coordinate_system', curve_key, 'marginals', 'posterior', 'sampling', 'divergences', 'warnings', 'elapsed_seconds'}
     require(isinstance(r, dict) and fields <= set(r) and not set(r) - fields - {'diagnostics', 'mcmc'}, 'result fields (raw samples are not supported)')
-    require(r['model'] == ('ippp_gp' if process else 'gaussian_mixture' if run['model'] == 'mixture' else 'truncated_normal_hierarchy') and r['coordinate_system'] == 'negative_bp', 'model/coordinates')
+    require(r['model'] == ('ippp_gp' if process else 'gaussian_mixture' if run['model'] == 'mixture' else 'single_density' if run['model'] == 'single_density' else 'truncated_normal_hierarchy') and r['coordinate_system'] == 'negative_bp', 'model/coordinates')
     require(isinstance(r[curve_key], dict), 'curve arrays')
     curve = r[curve_key]
     if process:

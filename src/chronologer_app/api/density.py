@@ -57,8 +57,9 @@ class DensityRequest(BaseModel):
 def fit_in_worker(request: dict, sampling: dict, progress_callback=None):
     start = time.perf_counter()
     process = 'observation' in request
-    mixture = "events" in request
-    if mixture:
+    single = 'events' in request and 'settings' in request
+    mixture = 'events' in request and not process and not single
+    if 'events' in request:
         from scipy.stats import norm, uniform
         from chronologer.distributions import calrcarbon
         rows = request['events']
@@ -77,6 +78,13 @@ def fit_in_worker(request: dict, sampling: dict, progress_callback=None):
             result = chronologer.models.ippp.gp(
                 observations, params=dict(start=-window['older'], end=-window['younger'],
                                           grid_size=window['grid_size']),
+                mcmc_config=sampling, progress_callback=progress_callback)
+        elif single:
+            settings = request['settings']
+            result = chronologer.models.density.single_density(
+                observations, params=dict(lower=-settings['older'], upper=-settings['younger'],
+                                          mean_prior=-settings['mean'], mean_prior_sd=settings['mean_sd'],
+                                          sd_prior_scale=settings['sd_scale']),
                 mcmc_config=sampling, progress_callback=progress_callback)
         else:
             result = chronologer.models.density.gmixture(
@@ -121,7 +129,7 @@ def fit_in_worker(request: dict, sampling: dict, progress_callback=None):
     mcmc = build_diagnostics(result.posterior, rows, sampling, model_spec=diagnostics if process else None)
     curve = ({'intensity': {key: values.tolist() for key, values in result.intensity.items()}} if process
              else {'density': {key: values.tolist() for key, values in result.density.items()}})
-    return {"model": 'ippp_gp' if process else "gaussian_mixture" if mixture else "truncated_normal_hierarchy", "coordinate_system": "negative_bp",
+    return {"model": 'ippp_gp' if process else "gaussian_mixture" if mixture else 'single_density' if single else "truncated_normal_hierarchy", "coordinate_system": "negative_bp",
             "mcmc": mcmc,
             "diagnostics": diagnostics,
             **curve,
@@ -165,6 +173,26 @@ class MixtureJobRequest(BaseModel):
     K_max: int = Field(default=5, strict=True, ge=1, le=20)
     label: str = Field(default='Mixture fit', min_length=1, max_length=250)
     sampling: SamplingSettings | None = None
+
+
+class SingleDensityJobRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    events: list[MixtureEvent] = Field(min_length=1, max_length=100)
+    settings: DensitySettings
+    label: str = Field(default='Single density fit', min_length=1, max_length=250)
+    sampling: SamplingSettings | None = None
+
+
+@router.post('/single_density/jobs', status_code=202)
+def start_single_density(request: SingleDensityJobRequest):
+    for curve in {e.parameters['curve'] for e in request.events if e.distribution == 'calrcarbon'}:
+        require_local_curve(curve)
+    try:
+        return get_jobs().submit(fit_in_worker, (request.model_dump(), sampling_for(request)), request.label)
+    except ValueError as error:
+        raise HTTPException(429, str(error)) from None
+    except OSError:
+        raise HTTPException(503, 'Cannot write inference logs. Check the local log directory permissions.') from None
 
 
 class ObservationWindow(BaseModel):
