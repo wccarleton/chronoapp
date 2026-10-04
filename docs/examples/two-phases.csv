@@ -1,0 +1,7 @@
+id,c14_mean,c14_err,curve,label,datum
+A1,3200,30,intcal20,A,BP1950
+A2,3300,30,intcal20,A,BP1950
+A3,3400,30,intcal20,A,BP1950
+B1,2800,30,intcal20,B,BP1950
+B2,2850,30,intcal20,B,BP1950
+B3,2900,30,intcal20,B,BP1950

@@ -1,5 +1,23 @@
 # Example data
 
+## Two-phase example
+
+`two-phases.csv` contains six illustrative radiocarbon measurements using
+IntCal20: three labelled **A** (older) and three labelled **B** (younger).
+These are made-up observations for trying the phase workflow, not real
+archaeological data or simulated draws from a fitted phase model.
+
+Import it through **Project → Import CSV**. In **Phase**, add a card named **A**
+with a **Uniform** distribution and a card named **B** with **Gaussian / Normal**.
+Place A below B on the canvas and leave **Apply oldest-to-youngest order** enabled.
+The labels assign all three dates to their matching phase automatically.
+
+For center-to-center ordering, leave each card's sole anchor at **0.5**. To try
+end-to-start ordering, set A's older/younger anchors to **0 / 1**, and B's to
+**0.05 / 0.95**. Review the priors and sampling controls, then select
+**Fit phase model**. Three observations per phase are deliberately sparse;
+inspect diagnostics and prior sensitivity before interpreting the output.
+
 ## Trimodal calendar-time comparison
 
 Load **`trimodal-calendar.csv`** for 60 synthetic radiocarbon determinations
