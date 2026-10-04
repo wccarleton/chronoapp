@@ -71,6 +71,9 @@ def test_phase_worker_and_saved_run(monkeypatch):
     assert result['phases'][0]['interval']['lower']['mean'] == pytest.approx(-2549.25)
     assert updates[-1]['completed'] == updates[-1]['total'] == 8
     assert len(result['marginals']['events']) == 3
+    assert result['model_diagnostics']['n_events'] == 3
+    assert result['model_diagnostics']['likelihood'] == 'event_marginal'
+    assert np.isfinite(result['model_diagnostics']['waic'])
     assert np.trapezoid(result['phases'][1]['density']['pdf_values'], result['phases'][1]['density']['t_values']) == pytest.approx(1, abs=1e-6)
     parameters = {**request['settings'], 'sampling': request['sampling'], 'phases': request['phases']}
     project = new_project(); project['events'] = request['events']; project['phases'] = request['phases']
@@ -78,6 +81,13 @@ def test_phase_worker_and_saved_run(monkeypatch):
         saved_run=dict(id='phase-run', created_at='2026-10-04T12:00:00+00:00', model='phase',
                        events=deepcopy(request['events']), parameters=deepcopy(parameters), result=result))
     assert load_project(dump_project(project)) == project
+    legacy = deepcopy(project)
+    del legacy['phase_model']['saved_run']['result']['model_diagnostics']
+    assert load_project(dump_project(legacy)) == legacy
+    invalid_score = deepcopy(project)
+    invalid_score['phase_model']['saved_run']['result']['model_diagnostics']['waic'] = float('nan')
+    with pytest.raises(ValueError, match='WAIC estimates'):
+        dump_project(invalid_score)
     project['events'][0]['parameters']['mean'] += 50
     assert load_project(dump_project(project))['phase_model']['saved_run']['events'][0]['parameters']['mean'] == 2500
     invalid = deepcopy(project); invalid['phase_model']['saved_run']['result']['posterior']['samples'] = [[1]]

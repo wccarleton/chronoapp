@@ -38,7 +38,22 @@ def validate_saved_run(run):
     r = run['result']
     curve_key = 'phases' if phase else 'intensity' if process else 'density'
     fields = {'model', 'coordinate_system', curve_key, 'marginals', 'posterior', 'sampling', 'divergences', 'warnings', 'elapsed_seconds'}
-    require(isinstance(r, dict) and fields <= set(r) and not set(r) - fields - {'diagnostics', 'mcmc'}, 'result fields (raw samples are not supported)')
+    require(isinstance(r, dict) and fields <= set(r) and not set(r) - fields - {'diagnostics', 'mcmc', 'model_diagnostics'}, 'result fields (raw samples are not supported)')
+    if 'model_diagnostics' in r:
+        score = r['model_diagnostics']
+        require(phase and isinstance(score, dict), 'model diagnostics')
+        if set(score) == {'unavailable'}:
+            require(isinstance(score['unavailable'], str) and 0 < len(score['unavailable']) <= 2000, 'WAIC unavailable reason')
+        else:
+            require(set(score) == {'waic', 'se', 'elpd_waic', 'p_waic', 'n_events', 'n_samples', 'warning', 'notes', 'likelihood'}, 'WAIC fields')
+            require(all(number(score[k]) for k in ('waic', 'se', 'elpd_waic', 'p_waic'))
+                    and score['se'] >= 0 and score['p_waic'] >= 0, 'WAIC estimates')
+            require(math.isclose(score['waic'], -2 * score['elpd_waic'], rel_tol=1e-9, abs_tol=1e-9), 'WAIC scale')
+            require(type(score['n_events']) is int and score['n_events'] == len(run['events'])
+                    and type(score['n_samples']) is int and score['n_samples'] >= 2, 'WAIC counts')
+            require(type(score['warning']) is bool and score['likelihood'] == 'event_marginal'
+                    and isinstance(score['notes'], list) and len(score['notes']) <= 20
+                    and all(isinstance(note, str) and len(note) <= 4000 for note in score['notes']), 'WAIC metadata')
     require(r['model'] == ('phase' if phase else 'ippp_gp' if process else 'gaussian_mixture' if run['model'] == 'mixture' else 'truncated_normal_hierarchy') and r['coordinate_system'] == 'negative_bp', 'model/coordinates')
     require(isinstance(r[curve_key], list if phase else dict), 'curve arrays')
     curve = r[curve_key]

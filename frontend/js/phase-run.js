@@ -94,6 +94,24 @@ export function initPhaseRun() {
         marginals: { parameters: phase.parameters, events } }, phase.label));
     }
     plots.push(createMcmcDiagnostics(output, result.mcmc));
+    const diagnostics = node('section', undefined, 'phase-model-diagnostics');
+    diagnostics.append(node('h3', 'Model diagnostics'));
+    const score = result.model_diagnostics;
+    if (!score || score.unavailable) {
+      diagnostics.append(node('p', `WAIC unavailable: ${score?.unavailable ?? 'this saved run predates WAIC support; rerun to calculate it.'}`, 'help'));
+    } else {
+      const table = node('table', undefined, 'phase-estimates');
+      for (const [label, value] of [['WAIC (deviance; lower is better)', score.waic], ['WAIC standard error', score.se],
+        ['ELPD WAIC (log scale; higher is better)', score.elpd_waic], ['Effective parameters (p WAIC)', score.p_waic],
+        ['Observed events', score.n_events], ['Retained posterior draws', score.n_samples]]) {
+        const row = node('tr'); row.append(node('th', label), node('td', number(value))); table.append(row);
+      }
+      diagnostics.append(table);
+      if (score.warning) diagnostics.append(node('p', 'WAIC reliability warning: a pointwise log-likelihood variance exceeds 0.4. Interpret this estimate cautiously.', 'help'));
+      for (const note of score.notes) diagnostics.append(node('p', note, 'help'));
+    }
+    diagnostics.append(node('p', 'Event-level predictive assessment integrates out latent dates and holds phase labels fixed. Compare models fitted to identical observations, memberships and measurement conventions. WAIC is not a convergence diagnostic or evidence that a chronology is correct; inspect MCMC diagnostics and uncertainty, especially with few events.', 'help'));
+    output.append(diagnostics);
     const timeline = node('section', undefined, 'phase-timeline');
     timeline.append(node('h3', 'Phase model posteriors · shared timeline'));
     output.append(timeline);

@@ -4,6 +4,7 @@ import time
 import chronologer
 import numpy as np
 from scipy.stats import norm, uniform
+from chronologer.phases import waic
 
 from .measurements import measurements
 from .posterior_plots import marginal, posterior_plots
@@ -60,7 +61,8 @@ def fit_in_worker(request, sampling, progress_callback=None):
     start = time.perf_counter()
     specs, orders = specification(request)
     rows = request['events']
-    trace = chronologer.fit_phase(rows, specs, measurements=measurements(rows), orders=orders,
+    observations = measurements(rows)
+    trace = chronologer.fit_phase(rows, specs, measurements=observations, orders=orders,
                                   **sampling, progress_callback=progress_callback)
     posterior = trace['posterior'].to_dataset()
     stats = trace['sample_stats'].to_dataset()
@@ -80,9 +82,14 @@ def fit_in_worker(request, sampling, progress_callback=None):
     deltas = [dict(before=order.before, after=order.after, anchors=list(order.anchors),
                    **estimate(posterior['delta'].isel(order=i).values)) for i, order in enumerate(orders)]
     plots = phase_plots(posterior, specs)
+    try:
+        model_diagnostics = waic(rows, specs, measurements=observations, posterior=posterior)
+    except (ValueError, FloatingPointError) as error:
+        model_diagnostics = dict(unavailable=str(error))
     mcmc = build_diagnostics(trace, rows, sampling, model_spec=request)
     return dict(model='phase', coordinate_system='negative_bp', phases=plots,
                 diagnostics=dict(deltas=deltas), marginals=posterior_plots(posterior, rows),
+                model_diagnostics=model_diagnostics,
                 posterior=dict(type='xarray.DataTree', variables=list(posterior.data_vars), sizes=dict(posterior.sizes)),
                 sampling=sampling, divergences=divergences, warnings=warnings,
                 elapsed_seconds=time.perf_counter() - start,

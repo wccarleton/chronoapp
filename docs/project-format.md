@@ -133,6 +133,15 @@ the snapshot; **View saved run** displays it explicitly as historical inputs
 without replacing the current project data. Inference uses isolated workers
 with the shared progress, cancellation, resolved-core and log handling.
 
+New phase results include optional `model_diagnostics`: event-marginal WAIC,
+deviance-scale standard error, log-scale ELPD, effective parameter estimate,
+event/sample counts, warnings and notes. Latent dates are integrated out by the
+engine; labels are held fixed. These summaries are saved without likelihood or
+chain matrices and displayed immediately above the shared posterior timeline.
+Older runs without these summaries remain readable and require a rerun to obtain
+WAIC. Only one phase definition and its latest run are retained; a named collection
+of alternative phase specifications is not yet implemented.
+
 Verification: **55 app tests passed, 1 existing Starlette warning in 13.84s**.
 The browser acceptance check added three phases, renamed them Early/Late/Middle,
 changed Middle to Normal and verified its graphic, dragged the third block

@@ -85,6 +85,7 @@ async def main():
                     const estimate=mean=>({mean,lower:mean-10,upper:mean+10});
                     const parameter=(name,calendar)=>({name,label:name,calendar,t_values:calendar?[-2600,-2500,-2400]:[10,20,30],pdf_values:[0,.05,0]});
                     window.fixture={model:'phase',coordinate_system:'negative_bp',sampling:{draws:4,tune:4,chains:1,cores:1,random_seed:912},divergences:0,warnings:[],elapsed_seconds:1,
+                      model_diagnostics:{waic:24,se:2,elpd_waic:-12,p_waic:1,n_events:2,n_samples:4,warning:false,notes:[],likelihood:'event_marginal'},
                       posterior:{type:'xarray.DataTree',variables:['mu','scale','tau','delta'],sizes:{chain:1,draw:4,phase:2,event:2,order:1}},
                       phases:project.phases.map((p,i)=>({label:p.label,distribution:p.distribution,density:{...density,t_values:i?[-2300,-2100,-1900]:density.t_values},
                         interval:{p:p.distribution==='uniform'?0:.05,q:p.distribution==='uniform'?1:.95,lower:estimate(-2550),upper:estimate(-2400)},parameters:[parameter('mu',true),parameter('scale',false)]})),
@@ -113,6 +114,7 @@ async def main():
                 await wait("!!state.data.phase_model.saved_run && document.querySelectorAll('#phase-output .phase-result').length===2")
                 assert await js("document.querySelector('#phase-output').innerText.includes('Anchor separations') && document.querySelectorAll('#phase-output svg').length>=2")
                 await wait("document.querySelectorAll('.phase-timeline path[data-phase-label]').length===2")
+                assert await js("document.querySelector('.phase-model-diagnostics').nextElementSibling.classList.contains('phase-timeline') && document.querySelector('.phase-model-diagnostics').textContent.includes('24')")
                 assert await js("""(()=>{
                   const section=document.querySelector('.phase-timeline');
                   const lines=[...section.querySelectorAll('path[data-phase-label]')];
