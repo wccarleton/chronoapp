@@ -11,6 +11,9 @@ Import it through **Project → Import CSV**. In **Phase**, add a card named **A
 with a **Uniform** distribution and a card named **B** with **Gaussian / Normal**.
 Place A below B on the canvas and leave **Apply connections** enabled.
 Connect A's top output to B's bottom input; this declares A older than B.
+Use **Fit model** to see all nodes, **+ / −** to zoom, or **Reset view** to
+return to 100%. Drag the canvas background or scroll to pan; Ctrl + scroll
+zooms around the pointer. Navigation is temporary and does not edit the model.
 The labels assign all three dates to their matching phase automatically.
 
 For center-to-center ordering, leave each card's sole anchor at **0.5**. To try

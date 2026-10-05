@@ -166,6 +166,44 @@ async def main():
                 # Reject a cycle using keyboard-accessible ports.
                 await js("""document.querySelector('[data-phase-id="p1"] .phase-output').click();document.querySelector('[data-phase-id="p0"] .phase-input').click();""")
                 assert await js("state.data.phase_model.parameters.edges.length===1 && document.querySelector('#phase-status').textContent.includes('cycle')")
+                # Navigation is view-only, and zoom keeps the pointer's world position fixed.
+                await js("""window.navigationSnapshot=JSON.stringify(state.data);window.navigationDirty=state.dirty;
+                    document.querySelector('#phase-fit-view').click();
+                    const canvas=document.querySelector('#phase-canvas');
+                    const box=canvas.getBoundingClientRect();
+                    const stage=document.querySelector('.phase-stage');
+                    const before=new DOMMatrix(getComputedStyle(stage).transform);
+                    const wheel=new WheelEvent('wheel',{clientX:box.left+canvas.clientLeft+canvas.clientWidth/2,clientY:box.top+canvas.clientTop+canvas.clientHeight/2,deltaY:-100,ctrlKey:true,bubbles:true,cancelable:true});
+                    const x=wheel.clientX-box.left-canvas.clientLeft,y=wheel.clientY-box.top-canvas.clientTop;
+                    canvas.dispatchEvent(wheel);
+                    const after=new DOMMatrix(getComputedStyle(stage).transform);
+                    if(after.a<=before.a || Math.abs((x-before.e)/before.a-(x-after.e)/after.a)>.01 || Math.abs((y-before.f)/before.a-(y-after.f)/after.a)>.01)throw Error('Zoom moved pointer world position: '+JSON.stringify({before:before.toString(),after:after.toString(),x,y}));
+                    canvas.dispatchEvent(new WheelEvent('wheel',{deltaX:30,deltaY:20,bubbles:true,cancelable:true}));
+                    const panned=new DOMMatrix(getComputedStyle(stage).transform);
+                    if(Math.abs(panned.e-after.e+30)>1e-4 || Math.abs(panned.f-after.f+20)>1e-4)throw Error('Wheel pan failed');
+                    document.querySelector('#phase-reset-view').click();
+                    if(document.querySelector('.phase-navigation output').textContent!=='100%')throw Error('Reset zoom failed');
+                    document.querySelector('#phase-zoom-in').click();
+                    if(document.querySelector('.phase-navigation output').textContent!=='120%')throw Error('Zoom button failed');""")
+                bounds = await js("""(()=>{const b=document.querySelector('#phase-canvas').getBoundingClientRect();return {x:b.right-15,y:b.bottom-15};})()""")
+                await js("window.panBefore=new DOMMatrix(getComputedStyle(document.querySelector('.phase-stage')).transform)")
+                await call('Input.dispatchMouseEvent', type='mousePressed', x=bounds['x'], y=bounds['y'], button='left', clickCount=1)
+                await call('Input.dispatchMouseEvent', type='mouseMoved', x=bounds['x']-40, y=bounds['y']-30, button='left', buttons=1)
+                await call('Input.dispatchMouseEvent', type='mouseReleased', x=bounds['x']-40, y=bounds['y']-30, button='left', clickCount=1)
+                assert await js("""(()=>{const m=new DOMMatrix(getComputedStyle(document.querySelector('.phase-stage')).transform);return Math.abs(m.e-panBefore.e+40)<1e-4 && Math.abs(m.f-panBefore.f+30)<1e-4 && JSON.stringify(state.data)===navigationSnapshot && state.dirty===navigationDirty;})()""")
+                await js("document.querySelector('#phase-fit-view').click();document.querySelector('#phase-zoom-in').click();window.moveBefore=structuredClone(state.data.phases[1].position);window.moveScale=new DOMMatrix(getComputedStyle(document.querySelector('.phase-stage')).transform).a")
+                bounds = await js("""(()=>{const b=document.querySelector('[data-phase-id="p1"] .phase-grip').getBoundingClientRect();return {x:b.x+b.width/2,y:b.y+b.height/2};})()""")
+                await call('Input.dispatchMouseEvent', type='mousePressed', x=bounds['x'], y=bounds['y'], button='left', clickCount=1)
+                await call('Input.dispatchMouseEvent', type='mouseMoved', x=bounds['x']+40, y=bounds['y']+20, button='left', buttons=1)
+                await call('Input.dispatchMouseEvent', type='mouseReleased', x=bounds['x']+40, y=bounds['y']+20, button='left', clickCount=1)
+                assert await js("Math.abs(state.data.phases[1].position.x-moveBefore.x-40/moveScale)<=1 && Math.abs(state.data.phases[1].position.y-moveBefore.y-20/moveScale)<=1")
+                await js("document.querySelector('.phase-connections button').click();document.querySelector('#phase-fit-view').click();document.querySelector('#phase-zoom-in').click()")
+                ports = await js("""['[data-phase-id="p0"] .phase-output','[data-phase-id="p1"] .phase-input'].map(selector=>{const b=document.querySelector(selector).getBoundingClientRect();return {x:b.x+b.width/2,y:b.y+b.height/2};})""")
+                await call('Input.dispatchMouseEvent', type='mousePressed', x=ports[0]['x'], y=ports[0]['y'], button='left', clickCount=1)
+                await call('Input.dispatchMouseEvent', type='mouseMoved', x=ports[1]['x'], y=ports[1]['y'], button='left', buttons=1)
+                assert await js("!!document.querySelector('.phase-edge.pending')")
+                await call('Input.dispatchMouseEvent', type='mouseReleased', x=ports[1]['x'], y=ports[1]['y'], button='left', clickCount=1)
+                assert await js("state.data.phase_model.parameters.edges.length===1 && state.data.phase_model.parameters.edges[0].target==='p1'")
                 # Archive round trip retains positions/IDs/edges and saved results.
                 assert await js("""const beforeCanvas=JSON.stringify(state.data);
                     const savedCanvas=await originalFetch('/api/projects/encode',{method:'POST',headers:{'Content-Type':'application/json'},body:beforeCanvas});
@@ -175,7 +213,7 @@ async def main():
                     const restoredCanvas=await loadedCanvas.json();
                     JSON.stringify(restoredCanvas.phases)===JSON.stringify(state.data.phases) && JSON.stringify(restoredCanvas.phase_model)===JSON.stringify(state.data.phase_model)""")
                 assert not errors, errors
-                print('PASS: phase workflow, canvas movement/connections/deletion, cycle rejection and archive round trip. No MCMC.')
+                print('PASS: phase workflow, pan/zoom, scaled node/connector dragging, cycle rejection and archive round trip. No MCMC.')
         finally:
             for process in (browser, server):
                 if process:

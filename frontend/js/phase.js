@@ -185,8 +185,9 @@ export function initPhase() {
   }
   state.addEventListener("change", () => {
     if (!ownChange) {
-      if (projectDocument !== state.data) { projectDocument = state.data; collapsed.clear(); }
-      surface.cancel(); render();
+      surface.cancel();
+      if (projectDocument !== state.data) { projectDocument = state.data; collapsed.clear(); surface.reset(); }
+      render();
     }
   });
   orderToggle.addEventListener('change', () => {
@@ -203,7 +204,7 @@ export function initPhase() {
       position: { x: specs().length ? Math.min(100000, Math.max(...specs().map(item => item.position?.x ?? 50)) + 480) : 50,
         y: specs().length ? Math.max(25, Math.min(...specs().map(item => item.position?.y ?? 50)) - 150) : 50 } };
     commit([...specs(), phase]); render();
-    list.lastElementChild.scrollIntoView({ block: "nearest", inline: "nearest" });
+    surface.reveal(list.lastElementChild);
     list.lastElementChild.querySelector("input").focus({ preventScroll: true });
     announce(phase.id);
   });

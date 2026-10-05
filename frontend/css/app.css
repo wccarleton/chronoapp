@@ -642,7 +642,13 @@ select {
 .phase-gloss svg { flex-shrink:0; color:var(--accent); }
 .phase-workspace { padding:20px; max-width:950px; }
 .phase-toolbar { display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
-.phase-canvas { position:relative; max-height:65vh; min-height:250px; overflow:auto; padding:16px 20px 16px 42px; border:1px solid var(--line); border-radius:6px; background:repeating-linear-gradient(to bottom, transparent 0, transparent 39px, var(--line) 40px); }
+.phase-canvas { position:relative; height:65vh; min-height:250px; overflow:hidden; padding:0; touch-action:none; cursor:grab; border:1px solid var(--line); border-radius:6px; background:repeating-linear-gradient(to bottom, transparent 0, transparent 39px, var(--line) 40px); }
+.phase-canvas.panning { cursor:grabbing; }
+.phase-stage { position:absolute; left:0; top:0; transform-origin:0 0; }
+.phase-stage .phase-list { margin:0; }
+.phase-card { cursor:default; }
+.phase-navigation { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:12px 0; }
+.phase-navigation output { min-width:4ch; font-variant-numeric:tabular-nums; }
 .phase-canvas::before { content:""; position:absolute; top:12px; bottom:12px; left:21px; border-left:1px solid var(--line); }
 .phase-time-label { font-size:11px; color:var(--muted); }
 .phase-list { position:relative; list-style:none; padding:0; margin:16px 0; min-height:400px; }
@@ -712,7 +718,7 @@ select {
 [data-theme=dark] .phase-density path { fill:#294c50; }
 @media(max-width:520px) {
   .phase-workspace { padding:12px; }
-  .phase-canvas { padding:12px 8px 12px 24px; }
+  .phase-canvas { padding:0; }
   .phase-edges { left:24px; top:28px; }
   .phase-canvas::before { left:10px; }
   .phase-card { grid-template-columns:24px minmax(0,1fr) 48px; padding:8px; gap:8px; }
