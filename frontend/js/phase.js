@@ -1,14 +1,12 @@
 import { projectState as state } from "./project-state.js";
 import { phaseAnchors, phaseSettings, phaseEdges, anchorError } from './phase-settings.js';
 import { phaseCanvas } from './phase-canvas.js';
+import { profiles, profilePath } from './phase-profile.js';
+import { downloadPhaseSvg } from './phase-export.js';
 
 // Visual profiles only. The inference adapter consumes state.data.phases:
 // Cards retain positions for presentation; phaseCopy excludes them from engine specs.
 // Directed edges use stable IDs, never screen position or the card list order.
-const profiles = {
-  uniform: { label: "Uniform", width: () => 1 },
-  normal: { label: "Gaussian / Normal", width: t => Math.exp(-.5 * ((t - .5) / .15) ** 2) },
-};
 const NS = "http://www.w3.org/2000/svg";
 function node(tag, className, text) {
   const item = document.createElement(tag);
@@ -23,11 +21,7 @@ function density(type) {
   svg.setAttribute("role", "img");
   svg.setAttribute("aria-label", `${profiles[type].label} density along vertical time; schematic`);
   const path = document.createElementNS(NS, "path");
-  const points = Array.from({ length: 61 }, (_, i) => {
-    const t = i / 60;
-    return `${(12 + 75 * profiles[type].width(t)).toFixed(2)},${10 + t * 100}`;
-  });
-  path.setAttribute("d", `M12,10 L${points.join(" L")} L12,110 Z`);
+  path.setAttribute("d", profilePath(type));
   svg.append(path);
   return svg;
 }
@@ -38,6 +32,13 @@ export function initPhase() {
   const add = document.getElementById("add-phase");
   const status = document.getElementById("phase-status");
   const orderToggle = document.getElementById('phase-ordered');
+  const exportButton = node('button', 'button secondary', 'Export phase map SVG');
+  exportButton.type = 'button'; exportButton.id = 'export-phase-svg';
+  orderToggle.parentElement.after(exportButton);
+  exportButton.addEventListener('click', () => {
+    try { downloadPhaseSvg(state.data); status.textContent = 'Schematic phase map exported. Shapes, anchors and connections are editable SVG groups.'; }
+    catch (error) { status.textContent = error.message; }
+  });
   let ownChange = false;
   let projectDocument = state.data;
   const collapsed = new Set();
@@ -84,6 +85,7 @@ export function initPhase() {
     list.replaceChildren();
     document.getElementById("phase-empty").hidden = specs().length > 0;
     add.disabled = !state.data || specs().length >= 100;
+    exportButton.disabled = !state.data || !specs().length;
     orderToggle.checked = phaseSettings(state.data?.phase_model?.parameters).ordered;
     orderToggle.disabled = !state.data || state.busy;
     for (const phase of specs()) {

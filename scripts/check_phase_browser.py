@@ -1,5 +1,6 @@
 """Small Windows/Chrome phase workflow check with mocked inference, no MCMC."""
 import asyncio
+import base64
 import json
 from pathlib import Path
 import socket
@@ -213,7 +214,41 @@ async def main():
                     const restoredCanvas=await loadedCanvas.json();
                     JSON.stringify(restoredCanvas.phases)===JSON.stringify(state.data.phases) && JSON.stringify(restoredCanvas.phase_model)===JSON.stringify(state.data.phase_model)""")
                 assert not errors, errors
-                print('PASS: phase workflow, pan/zoom, scaled node/connector dragging, cycle rejection and archive round trip. No MCMC.')
+                await js("""const {phaseSvg}=await import('/js/phase-export.js');window.phaseSvg=phaseSvg;
+                    window.mapProject=structuredClone(state.data);
+                    mapProject.metadata.project_name='Example phase map';
+                    mapProject.phases=mapProject.phases.slice(0,2);
+                    mapProject.phases[0]={...mapProject.phases[0],label:'A <older>',distribution:'uniform',anchors:[0,1],position:{x:50,y:400}};
+                    mapProject.phases[1]={...mapProject.phases[1],label:'B & younger',distribution:'normal',anchors:[.05,.95],position:{x:450,y:50}};
+                    mapProject.phase_model.parameters={ordered:true,edges:[{source:'p0',target:'p1'}]};
+                    window.mapText=phaseSvg(mapProject);
+                    window.mapDoc=new DOMParser().parseFromString(mapText,'image/svg+xml');
+                    if(mapDoc.querySelector('parsererror'))throw Error('Invalid SVG XML');
+                    if(mapDoc.querySelectorAll('#phases > g').length!==2 || mapDoc.querySelector('rect,script,image'))throw Error('Unexpected assets');
+                    const circles=[...mapDoc.querySelectorAll('circle')];
+                    if(circles.length!==4 || +circles[0].getAttribute('cy')!==260 || +circles[1].getAttribute('cy')!==0)throw Error('Uniform anchors');
+                    if(Math.abs(+circles[2].getAttribute('cy')-(.5+1.64485362695/(20/3))*260)>.001)throw Error('Normal quantile placement');
+                    if(+circles[2].getAttribute('cy')<=+circles[3].getAttribute('cy'))throw Error('Time direction');
+                    if(!mapDoc.querySelector('[data-source="p0"][data-target="p1"]') || !mapText.includes('&lt;older&gt;'))throw Error('Edges/labels');
+                    const inactive=structuredClone(mapProject);inactive.phase_model.parameters.ordered=false;
+                    if(!phaseSvg(inactive).includes('stroke-dasharray="7 5"'))throw Error('Inactive edges');
+                    const bad=structuredClone(mapProject);bad.phases[1].anchors=[0,1];let rejected=false;
+                    try{phaseSvg(bad);}catch{rejected=true;}if(!rejected)throw Error('Invalid anchors accepted');
+                    window.beforeExport=JSON.stringify(state.data);window.exportText=null;
+                    const originalURL=URL.createObjectURL;
+                    URL.createObjectURL=blob=>{blob.text().then(text=>window.exportText=text);return originalURL(blob);};
+                    HTMLAnchorElement.prototype.click=function(){};
+                    document.querySelector('#export-phase-svg').click();""")
+                await wait('!!window.exportText')
+                assert await js("exportText.includes('<svg') && JSON.stringify(state.data)===beforeExport")
+                Path('.local').mkdir(exist_ok=True)
+                Path('.local/phase-map-example.svg').write_text(await js('mapText'), encoding='utf-8')
+                await call('Emulation.setDeviceMetricsOverride', width=1000, height=900, deviceScaleFactor=1, mobile=False)
+                await js("document.head.replaceChildren();document.body.style='margin:0;background:white';document.body.replaceChildren(document.importNode(mapDoc.documentElement,true))")
+                screenshot = await call('Page.captureScreenshot', format='png')
+                Path('.local/phase-map-example.png').write_bytes(base64.b64decode(screenshot['data']))
+                assert not errors, errors
+                print('PASS: phase workflow and schematic SVG groups, quantile anchors, connections, labels and download. No MCMC.')
         finally:
             for process in (browser, server):
                 if process:
