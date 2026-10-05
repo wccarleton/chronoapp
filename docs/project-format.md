@@ -221,16 +221,20 @@ use a separate fresh engine worker per curve, preserving input order and binding
 each plot/export to its matching curve.
 
 Summary uses saved copies from shared project state, rather than Calibration's
-DOM or derived plot arrays. Gaussian mixture inference accepts BP1950 normal,
+DOM or derived plot arrays. Single-density and Gaussian mixture inference accept BP1950 normal,
 uniform, and radiocarbon events; each radiocarbon input uses its selected installed
-curve through the distribution's spline references. The single-density API still
-requires one shared curve.
+curve through the distribution's spline references. New single-density fits use
+the same measurement adapter as mixtures, with common explicit calendar bounds
+and the existing location/scale hyperpriors. The legacy `/density` endpoints
+remain radiocarbon-only and retain their original likelihood and shared-curve requirement.
 Other distributions remain preserved in projects but cannot yet be fitted.
 Arbitrary curves and calibration-curve mixtures are not implemented.
 
 The Summarize prototype saves an optional `data/summaries.json` entry (root
 `summaries` in the API document). Each specification has `id`, `label`, `model`
-(`density` or `mixture`), `events`, and a reserved `parameters` object. These are
+(`single_density` or `mixture`), `events`, and a reserved `parameters` object. Legacy
+`density` specifications and their saved runs remain readable without rewriting
+historical results; rerunning uses the new single-density adapter. These are
 model-family intentions, not executable configurations or implicit priors.
 The UI supports up to 100 summaries with up to 100 events each. Selected events
 are independent copies of project event records, including their per-event curve;
@@ -305,3 +309,49 @@ to 32 in the UI. Saved results contain `intensity` arrays (`t_values`, `rate_val
 the resolved observation/GP specification. Validation checks that intensity
 endpoints and the saved specification match the run's declared dates. Existing
 summary results and project archives remain unchanged.
+
+Single-density summaries optionally store `parameters.mode = "simulate"`;
+missing mode means inference. `parameters.simulation` records event count `n`,
+measurement `distribution`, measurement SD `error`, `curve` (null for calendar
+measurements), and independent predictive replicate count `draws`. The existing
+population bounds and hyperprior settings apply to both operations.
+
+Simulation runs have empty input-event snapshots. Their result contains `prior`
+metadata instead of `posterior`, `mode: "simulate"`, and a `simulation` snapshot
+with settings and the first complete generated dataset (`exported_draw: 0`).
+Model plots summarize all independent prior-predictive replicates; they are not
+fitted posteriors. New results store `simulation.event_density: "measurement"`:
+event curves show measurement PDFs for the first exported dataset, rather than
+latent-date histograms. Radiocarbon curves use uncalibrated radiocarbon BP and
+laboratory SD; the model curve uses calendar BP. The shared numeric BP axis is
+explicitly labelled with those distinct scales. Normal/uniform measurement PDFs
+use calendar BP. Display peak-scaling does not change the stored PDF arrays.
+Older saved runs without the marker retain their latent-date plots and are
+labelled accordingly; rerunning updates them to measurement curves.
+No chains or MCMC diagnostics are saved. Saving, reopening, and loading saved
+runs preserves the plots and CSV download.
+
+The CSV exports that first dataset, not average measurements across replicates.
+Radiocarbon exports use the current importer columns
+`id,c14_mean,c14_err,curve,datum`. Normal exports use
+`id,distribution,mean,sd,datum`; uniform exports use
+`id,distribution,lower,upper,datum`. Calendar CSV import remains future work.
+
+Gaussian-mixture summaries also support `mode: "simulate"`, using the same
+simulation settings, plots, first-dataset export and archive structure. Their
+population settings are `K_max`, `prior_center` (BP1950), and `prior_scale` (years),
+with explicit center/scale because no input dates supply empirical defaults.
+Results retain model `gaussian_mixture` and the existing mixture weight summaries
+and resolved priors in `diagnostics`; these describe prior draws, not MCMC
+diagnostics. Components are unbounded and dates outside the selected radiocarbon
+curve's support cause the run to fail rather than changing the population model.
+
+Simulation limits apply to `n × draws ≤ 1,000,000`, with each dimension between
+1 and 10,000. One replicate generates n dates from one randomly drawn population
+parameter set; it does not accept user-fixed parameter values. Its model band
+collapses to a single density curve. Only the first replicate supplies synthetic
+data for CSV and measurement curves; model density summaries use all replicates.
+All n measurements are saved and exported. New results record
+`simulation.plotted_events = min(n, 100)` and store only that first subset's
+measurement PDFs, with an explicit display notice for larger datasets. Older
+saved results without this field retain all their stored event curves.

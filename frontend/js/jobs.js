@@ -92,7 +92,7 @@ export function initJobs() {
   });
 }
 export async function runDensity(data, label) {
-  const job = await request(data.observation ? '/ippp/jobs' : data.events ? "/mixture/jobs" : "/density/jobs", {
+  const job = await request(data.simulation ? '/simulation/jobs' : data.observation ? '/ippp/jobs' : data.events && data.settings ? '/single_density/jobs' : data.events ? "/mixture/jobs" : "/density/jobs", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...data, label }),
   });
   observed.add(job.id);

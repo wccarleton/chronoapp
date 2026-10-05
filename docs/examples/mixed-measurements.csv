@@ -1,0 +1,7 @@
+id,distribution,c14_mean,c14_err,curve,mean,sd,datum
+C14-1,calrcarbon,2500,30,intcal20,,,BP1950
+C14-2,calrcarbon,2550,35,intcal20,,,BP1950
+C14-3,calrcarbon,2600,30,intcal20,,,BP1950
+Normal-1,normal,,,,2550,40,BP1950
+Normal-2,normal,,,,2650,50,BP1950
+Normal-3,normal,,,,2750,40,BP1950

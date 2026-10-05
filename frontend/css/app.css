@@ -659,6 +659,10 @@ select {
 [data-theme=dark] .phase-distribution option { background:#19242c; }
 .phase-density { width:80px; height:120px; }
 .summary-card { margin-top:18px; padding:18px; border:1px solid var(--line); border-radius:6px; }
+.summary-mode { display:flex; flex-wrap:wrap; gap:18px; margin:14px 0; padding:10px 12px; border:1px solid var(--line); border-radius:4px; }
+.summary-mode legend { color:var(--muted); font-size:12px; }
+.summary-mode label { display:flex; align-items:center; gap:6px; margin:0; }
+.summary-mode input { accent-color:var(--accent); }
 #summary-list { max-height:70vh; overflow:auto; }
 .summary-events, .summary-choices { max-height:220px; overflow:auto; padding:0; list-style:none; }
 .summary-events li, .summary-choices label { display:flex; align-items:center; gap:12px; margin:8px 0; }

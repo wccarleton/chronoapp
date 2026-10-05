@@ -30,15 +30,20 @@ def validate_saved_run(run):
         require(timestamp.tzinfo is not None, 'timestamp timezone')
     except (AttributeError, TypeError, ValueError):
         raise ValueError('Invalid saved Summary result: timestamp') from None
-    require(run['model'] in ('density', 'mixture', 'ippp_gp') and isinstance(run['parameters'], dict), 'model/settings')
+    require(run['model'] in ('density', 'single_density', 'mixture', 'ippp_gp') and isinstance(run['parameters'], dict), 'model/settings')
     process = run['model'] == 'ippp_gp'
-    require(isinstance(run['events'], list) and 1 <= len(run['events']) <= 100, 'events')
+    simulation = run['parameters'].get('mode') == 'simulate'
+    require(not simulation or run['model'] in ('single_density', 'mixture'), 'simulation model')
+    require(isinstance(run['events'], list) and (len(run['events']) == 0 if simulation else 1 <= len(run['events']) <= 100), 'events')
     require(all(isinstance(e, dict) for e in run['events']), 'event records')
     r = run['result']
     curve_key = 'intensity' if process else 'density'
-    fields = {'model', 'coordinate_system', curve_key, 'marginals', 'posterior', 'sampling', 'divergences', 'warnings', 'elapsed_seconds'}
+    metadata_key = 'prior' if simulation else 'posterior'
+    fields = {'model', 'coordinate_system', curve_key, 'marginals', metadata_key, 'sampling', 'divergences', 'warnings', 'elapsed_seconds'}
+    if simulation:
+        fields |= {'mode', 'simulation'}
     require(isinstance(r, dict) and fields <= set(r) and not set(r) - fields - {'diagnostics', 'mcmc'}, 'result fields (raw samples are not supported)')
-    require(r['model'] == ('ippp_gp' if process else 'gaussian_mixture' if run['model'] == 'mixture' else 'truncated_normal_hierarchy') and r['coordinate_system'] == 'negative_bp', 'model/coordinates')
+    require(r['model'] == ('ippp_gp' if process else 'gaussian_mixture' if run['model'] == 'mixture' else 'single_density' if run['model'] == 'single_density' else 'truncated_normal_hierarchy') and r['coordinate_system'] == 'negative_bp', 'model/coordinates')
     require(isinstance(r[curve_key], dict), 'curve arrays')
     curve = r[curve_key]
     if process:
@@ -54,8 +59,52 @@ def validate_saved_run(run):
     require(isinstance(sampling, dict) and set(sampling) in ({'draws', 'tune', 'chains', 'random_seed'}, {'draws', 'tune', 'chains', 'random_seed', 'cores'}), 'sampling metadata')
     require(type(sampling.get('cores', 1)) is int and 1 <= sampling.get('cores', 1) <= sampling['chains'], 'sampling cores')
     require(all(type(v) is int for v in sampling.values()) and sampling['draws'] > 0 and sampling['tune'] >= 0 and sampling['chains'] > 0, 'sampling values')
-    validate_saved_sampling(run['parameters'], r)
-    posterior = r['posterior']
+    validate_saved_sampling(run['parameters'], None if simulation else r)
+    rows = run['events']
+    if simulation:
+        from .api.density import SimulationSettings, DensitySettings, MixtureSimulationSettings, MixtureEvent
+        from chronologer.calcurves import DEFAULT_CURVES
+        spec = r['simulation']
+        require(r['mode'] == 'simulate' and isinstance(spec, dict)
+                and {'settings', 'events', 'exported_draw'} <= set(spec)
+                and not set(spec) - {'settings', 'events', 'exported_draw', 'event_density', 'plotted_events'}
+                and ('event_density' not in spec or spec['event_density'] == 'measurement')
+                and type(spec['exported_draw']) is int and spec['exported_draw'] == 0, 'simulation fields')
+        try:
+            resolved = SimulationSettings(**run['parameters']['simulation']).model_dump()
+            if run['model'] == 'mixture':
+                MixtureSimulationSettings(**{key: run['parameters'][key] for key in ('K_max', 'prior_center', 'prior_scale')})
+            else:
+                DensitySettings(**{key: run['parameters'][key] for key in ('older', 'younger', 'mean', 'mean_sd', 'sd_scale')})
+        except (KeyError, TypeError, ValueError):
+            require(False, 'simulation settings')
+        require(resolved == spec['settings'], 'simulation snapshot')
+        require(sampling == dict(draws=resolved['draws'], tune=0, chains=1, cores=1, random_seed=912)
+                and r['divergences'] == 0 and 'mcmc' not in r, 'simulation sampling metadata')
+        rows = spec['events']
+        require(isinstance(rows, list) and len(rows) == resolved['n'], 'simulated event count')
+        for i, row in enumerate(rows):
+            try:
+                event = MixtureEvent(**row)
+            except (TypeError, ValueError):
+                require(False, 'simulated event')
+            require(event.id == f'Sim-{i + 1}' and event.distribution == resolved['distribution']
+                    and event.datum == 'BP1950' and set(row) == {'id', 'distribution', 'parameters', 'datum'}, 'simulated event identity')
+            expected = {'calrcarbon': {'c14_mean', 'c14_err', 'curve'}, 'normal': {'mean', 'sd'}, 'uniform': {'lower', 'upper'}}[event.distribution]
+            require(set(event.parameters) == expected, 'simulated measurement fields')
+            if event.distribution == 'calrcarbon':
+                require(event.parameters['curve'] == resolved['curve'] and resolved['curve'] in DEFAULT_CURVES
+                        and event.parameters['c14_err'] == resolved['error'], 'simulated radiocarbon settings')
+            elif event.distribution == 'normal':
+                require(event.parameters['sd'] == resolved['error'], 'simulated normal settings')
+            else:
+                require(math.isclose(event.parameters['upper'] - event.parameters['lower'],
+                                     2 * math.sqrt(3) * resolved['error'], rel_tol=1e-9), 'simulated uniform settings')
+        if 'plotted_events' in spec:
+            require(spec.get('event_density') == 'measurement' and type(spec['plotted_events']) is int
+                    and spec['plotted_events'] == min(len(rows), 100), 'simulation plot count')
+            rows = rows[:spec['plotted_events']]
+    posterior = r[metadata_key]
     require(isinstance(posterior, dict) and set(posterior) == {'type', 'variables', 'sizes'}, 'posterior metadata only')
     require(posterior['type'] == 'xarray.DataTree' and isinstance(posterior['variables'], list)
             and all(isinstance(v, str) for v in posterior['variables']) and isinstance(posterior['sizes'], dict)
@@ -68,10 +117,10 @@ def validate_saved_run(run):
         require(isinstance(p, dict) and set(p) == {'name', 'label', 'calendar', 't_values', 'pdf_values'}, 'parameter fields')
         require(p['name'] == names[i] and isinstance(p['label'], str) and p['calendar'] is (not process and i == 0), 'parameter identity')
         arrays(p)
-    require(isinstance(marginals['events'], list) and len(marginals['events']) == len(run['events']), 'event marginals')
+    require(isinstance(marginals['events'], list) and len(marginals['events']) == len(rows), 'event marginals')
     for i, e in enumerate(marginals['events']):
         require(isinstance(e, dict) and set(e) == {'id', 'index', 't_values', 'pdf_values'}, 'event fields')
-        require(e['index'] == i and e['id'] == run['events'][i].get('id'), 'event identity')
+        require(e['index'] == i and e['id'] == rows[i].get('id'), 'event identity')
         arrays(e)
     diagnostics = r.get('diagnostics', {})
     require(isinstance(diagnostics, dict), 'diagnostics')
@@ -95,6 +144,9 @@ def validate_saved_run(run):
             require(isinstance(values, list) and len(values) == k and all(number(v) and 0 <= v <= 1 for v in values), 'weight diagnostics')
         require(abs(sum(diagnostics['weight_mean']) - 1) < 1e-6, 'weight normalization')
         require(isinstance(diagnostics['priors'], dict) and all(number(v) for v in diagnostics['priors'].values()), 'priors')
+        if simulation:
+            require(diagnostics['priors'].get('center') == -run['parameters']['prior_center']
+                    and diagnostics['priors'].get('scale') == run['parameters']['prior_scale'], 'simulation mixture priors')
     else:
         require(not diagnostics, 'unexpected diagnostics')
     if 'mcmc' in r:
