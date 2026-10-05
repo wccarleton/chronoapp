@@ -30,6 +30,29 @@ def test_actual_mixture_result_roundtrips_compactly():
     assert load_project(dump_project(project)) == project
 
 
+def test_model_diagnostics_roundtrip_and_validation():
+    project = saved_project()
+    result = project['summaries'][0]['saved_run']['result']
+    result['model_diagnostics'] = dict(waic=20., elpd_waic=-10., p_waic=2., se=1.,
+        n_events=20, n_units=20, n_samples=100, warning=False, notes=[], likelihood='event_marginal')
+    assert load_project(dump_project(project)) == project
+    result['model_diagnostics']['waic'] = float('nan')
+    with pytest.raises(ValueError, match='model diagnostics'):
+        dump_project(project)
+    result['model_diagnostics'] = {'unavailable': 'Too few retained draws.'}
+    assert load_project(dump_project(project)) == project
+
+
+def test_ippp_score_unit_validation():
+    from chronologer_app.saved_results import validate_model_diagnostics
+    score = dict(waic=20., elpd_waic=-10., p_waic=2., se=None, n_events=3,
+                 n_units=1, n_samples=100, warning=True, notes=[], likelihood='observation_window')
+    validate_model_diagnostics(score, 3, process=True)
+    score['se'] = 1.
+    with pytest.raises(ValueError, match='model diagnostics'):
+        validate_model_diagnostics(score, 3, process=True)
+
+
 @pytest.mark.parametrize('change', [
     lambda r: r['density']['pdf_values'].__setitem__(0, -1),
     lambda r: r['density']['upper_values'].pop(),

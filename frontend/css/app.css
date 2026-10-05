@@ -680,6 +680,10 @@ select {
 .phase-estimates th, .phase-estimates td { text-align:left; padding:8px; border-bottom:1px solid var(--line); }
 .phase-result { margin-top:24px; }
 .summary-card { margin-top:18px; padding:18px; border:1px solid var(--line); border-radius:6px; }
+.summary-mode { display:flex; flex-wrap:wrap; gap:18px; margin:14px 0; padding:10px 12px; border:1px solid var(--line); border-radius:4px; }
+.summary-mode legend { color:var(--muted); font-size:12px; }
+.summary-mode label { display:flex; align-items:center; gap:6px; margin:0; }
+.summary-mode input { accent-color:var(--accent); }
 #summary-list { max-height:70vh; overflow:auto; }
 .summary-events, .summary-choices { max-height:220px; overflow:auto; padding:0; list-style:none; }
 .summary-events li, .summary-choices label { display:flex; align-items:center; gap:12px; margin:8px 0; }
@@ -1119,6 +1123,8 @@ main {
 /* Saved MCMC reports: bounded tables and one vector trace page at a time. */
 .mcmc-diagnostics { margin-top: 1rem; }
 .mcmc-diagnostics > summary { cursor: pointer; font-weight: 600; padding: .6rem 0; }
+.model-diagnostics-table th, .model-diagnostics-table td { text-align: left; }
+.model-diagnostics-table th { padding-right: 1rem; }
 .mcmc-table-scroll { max-height: 22rem; overflow: auto; margin: .8rem 0; }
 .mcmc-table-scroll table { border-collapse: collapse; width: 100%; font-size: .85rem; white-space: nowrap; }
 .mcmc-table-scroll th, .mcmc-table-scroll td { padding: .45rem .65rem; text-align: right; border-bottom: 1px solid #74858a44; }

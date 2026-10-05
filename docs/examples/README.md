@@ -9,7 +9,8 @@ archaeological data or simulated draws from a fitted phase model.
 
 Import it through **Project → Import CSV**. In **Phase**, add a card named **A**
 with a **Uniform** distribution and a card named **B** with **Gaussian / Normal**.
-Place A below B on the canvas and leave **Apply oldest-to-youngest order** enabled.
+Place A below B on the canvas and leave **Apply connections** enabled.
+Connect A's top output to B's bottom input; this declares A older than B.
 The labels assign all three dates to their matching phase automatically.
 
 For center-to-center ordering, leave each card's sole anchor at **0.5**. To try
@@ -17,6 +18,23 @@ end-to-start ordering, set A's older/younger anchors to **0 / 1**, and B's to
 **0.05 / 0.95**. Review the priors and sampling controls, then select
 **Fit phase model**. Three observations per phase are deliberately sparse;
 inspect diagnostics and prior sensitivity before interpreting the output.
+
+## Mixed measurement types
+
+Open **`mixed-measurements.chrono`** using **Open project** for six made-up
+observations: three IntCal20 radiocarbon measurements and three normal
+calendar-date measurements. All use BP1950; normal `mean` values are calendar
+years before AD 1950 and `sd` values are one-standard-deviation errors in years.
+Radiocarbon errors are laboratory SDs; curve uncertainty is handled by the model.
+
+In **Summarize**, add a summary, select **Single density** or **Gaussian mixture**,
+and add all six events. The existing single-density starting bounds of 5000–1
+BP1950 include these dates; review bounds and priors before fitting.
+
+`mixed-measurements.csv` is the human-readable reference copy. The current CSV
+importer accepts radiocarbon-only files, so use the `.chrono` project to load
+this mixed dataset. These illustrative values are not real archaeological data
+or simulated draws from a fitted model.
 
 ## Trimodal calendar-time comparison
 

@@ -107,6 +107,7 @@ export function initPhaseRun() {
         const row = node('tr'); row.append(node('th', label), node('td', number(value))); table.append(row);
       }
       diagnostics.append(table);
+      diagnostics.append(node('p', 'WAIC compares how well alternative process models predict the observed dating measurements, including radiocarbon determinations; it does not directly evaluate how well they predict the unknown true calendar dates of the events.', 'help'));
       if (score.warning) diagnostics.append(node('p', 'WAIC reliability warning: a pointwise log-likelihood variance exceeds 0.4. Interpret this estimate cautiously.', 'help'));
       for (const note of score.notes) diagnostics.append(node('p', note, 'help'));
     }

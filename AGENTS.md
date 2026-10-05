@@ -3,7 +3,7 @@
 - ChronoApp is a local browser UI plus a Python/FastAPI service.
 - Scientific models, calibration and likelihoods belong in sibling `../chronologer`.
 - Keep that package independent of app state, HTTP, files and browser code.
-- Engine entry points are `chronologer.models.density.single` / `gmixture`
+- Engine entry points are `chronologer.models.density.single_density` / `gmixture`
   and `chronologer.models.ippp.gp`; `chronologer.fit` is the optional dispatcher.
 - `frontend/js/project-state.js` owns shared semantic project state.
 - Project and Calibration edit the same events; calibration selection is separate.
