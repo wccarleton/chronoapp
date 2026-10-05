@@ -93,6 +93,8 @@ def fit_in_worker(request: dict, sampling: dict, progress_callback=None):
     else:
         rows, settings = request["determinations"], request["settings"]
         curve = chronologer.load_calcurve(rows[0]["curve"], quiet=True)
+        from chronologer.distributions import calrcarbon
+        observations = [calrcarbon(curve, -row['age'], row['error']) for row in rows]
         result = chronologer.models.density.single(
             dict(radiocarbon_ages=[-row['age'] for row in rows],
                  radiocarbon_errors=[row['error'] for row in rows], calcurve=curve),
@@ -127,10 +129,20 @@ def fit_in_worker(request: dict, sampling: dict, progress_callback=None):
         total = (sampling['draws'] + sampling['tune']) * sampling['chains']
         progress_callback(dict(stage='Generating MCMC diagnostics', completed=total, total=total))
     mcmc = build_diagnostics(result.posterior, rows, sampling, model_spec=diagnostics if process else None)
+    from chronologer.model_diagnostics import model_diagnostics
+    score = model_diagnostics(posterior, observations,
+        model='ippp_gp' if process else 'mixture' if mixture else 'single_density',
+        **({'grid': result.intensity['t_values']} if process else {} if mixture else
+           {'lower': -settings['older'], 'upper': -settings['younger']}))
+    import json
+    from ..services.mcmc_diagnostics import artifact
+    mcmc['artifacts'].append(artifact('model-diagnostics.json', 'application/json',
+                                    json.dumps(score, allow_nan=False, indent=2).encode('utf-8')))
     curve = ({'intensity': {key: values.tolist() for key, values in result.intensity.items()}} if process
              else {'density': {key: values.tolist() for key, values in result.density.items()}})
     return {"model": 'ippp_gp' if process else "gaussian_mixture" if mixture else 'single_density' if single else "truncated_normal_hierarchy", "coordinate_system": "negative_bp",
             "mcmc": mcmc,
+            "model_diagnostics": score,
             "diagnostics": diagnostics,
             **curve,
             "marginals": posterior_plots(posterior, rows),

@@ -16,9 +16,11 @@
 - Phase is a saved, reorderable UI prototype; Depth remains a preview.
 
 ## In progress
+- Predictive diagnostics are complete for Summary and Process Lab;
+  see `docs/model-diagnostics.md`. Diagnostics checks use synthetic/mocked fits.
 - GP engine/API, Process Lab and parallel-chain settings are complete and ready for review.
 - No implementation task is currently outstanding.
-- Latest full suites: engine 78 passed (17 warnings), app 109 passed (1 warning).
+- Latest full suites: engine 90 passed (21 warnings), app 120 passed (1 warning).
 - Browser checks passed real GP sampling, tab switching, save/load and SVG/PNG/PDF export.
 - Browser checks also passed Auto/legacy cores settings and a saved/reopened parallel fit.
 - Use Conda environment `chronoapp`; PyMC 6.3.2, PyTensor 3.3.2, ArviZ 1.3.0.

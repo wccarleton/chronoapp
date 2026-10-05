@@ -1100,6 +1100,8 @@ main {
 /* Saved MCMC reports: bounded tables and one vector trace page at a time. */
 .mcmc-diagnostics { margin-top: 1rem; }
 .mcmc-diagnostics > summary { cursor: pointer; font-weight: 600; padding: .6rem 0; }
+.model-diagnostics-table th, .model-diagnostics-table td { text-align: left; }
+.model-diagnostics-table th { padding-right: 1rem; }
 .mcmc-table-scroll { max-height: 22rem; overflow: auto; margin: .8rem 0; }
 .mcmc-table-scroll table { border-collapse: collapse; width: 100%; font-size: .85rem; white-space: nowrap; }
 .mcmc-table-scroll th, .mcmc-table-scroll td { padding: .45rem .65rem; text-align: right; border-bottom: 1px solid #74858a44; }

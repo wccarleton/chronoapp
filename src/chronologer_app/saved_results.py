@@ -42,7 +42,10 @@ def validate_saved_run(run):
     fields = {'model', 'coordinate_system', curve_key, 'marginals', metadata_key, 'sampling', 'divergences', 'warnings', 'elapsed_seconds'}
     if simulation:
         fields |= {'mode', 'simulation'}
-    require(isinstance(r, dict) and fields <= set(r) and not set(r) - fields - {'diagnostics', 'mcmc'}, 'result fields (raw samples are not supported)')
+    require(isinstance(r, dict) and fields <= set(r) and not set(r) - fields - {'diagnostics', 'mcmc', 'model_diagnostics'}, 'result fields (raw samples are not supported)')
+    if 'model_diagnostics' in r:
+        require(not simulation, 'simulation predictive diagnostics')
+        validate_model_diagnostics(r['model_diagnostics'], len(run['events']), process)
     require(r['model'] == ('ippp_gp' if process else 'gaussian_mixture' if run['model'] == 'mixture' else 'single_density' if run['model'] == 'single_density' else 'truncated_normal_hierarchy') and r['coordinate_system'] == 'negative_bp', 'model/coordinates')
     require(isinstance(r[curve_key], dict), 'curve arrays')
     curve = r[curve_key]
@@ -153,6 +156,28 @@ def validate_saved_run(run):
         validate_mcmc(r['mcmc'], sampling['chains'])
 
 
+def validate_model_diagnostics(score, n_events, process=False):
+    def require(condition):
+        if not condition:
+            raise ValueError('Invalid saved Summary result: model diagnostics')
+    def number(value):
+        return type(value) in (int, float) and math.isfinite(value)
+    require(isinstance(score, dict))
+    if set(score) == {'unavailable'}:
+        require(isinstance(score['unavailable'], str) and 0 < len(score['unavailable']) <= 2000)
+        return
+    require(set(score) == {'waic', 'se', 'elpd_waic', 'p_waic', 'n_events', 'n_samples', 'n_units', 'warning', 'notes', 'likelihood'})
+    require(all(number(score[k]) for k in ('waic', 'elpd_waic', 'p_waic')) and score['p_waic'] >= 0)
+    require(math.isclose(score['waic'], -2 * score['elpd_waic'], rel_tol=1e-9, abs_tol=1e-9))
+    require(type(score['n_events']) is int and score['n_events'] == n_events
+            and type(score['n_samples']) is int and score['n_samples'] >= 2)
+    require(type(score['n_units']) is int and score['n_units'] == (1 if process else n_events))
+    require(score['se'] is None if score['n_units'] == 1 else number(score['se']) and score['se'] >= 0)
+    require(type(score['warning']) is bool and score['likelihood'] == ('observation_window' if process else 'event_marginal'))
+    require(isinstance(score['notes'], list) and len(score['notes']) <= 20
+            and all(isinstance(note, str) and len(note) <= 4000 for note in score['notes']))
+
+
 def validate_mcmc(mcmc, chains):
     """Bounded, data-only reports. SVGs are displayed as images, never HTML."""
     import base64
@@ -180,7 +205,8 @@ def validate_mcmc(mcmc, chains):
     require(isinstance(mcmc['artifacts'], list) and len(mcmc['artifacts']) <= 260)
     names = set()
     types = {'diagnostics.json': 'application/json', 'diagnostics.csv': 'text/csv',
-             'trace-plots.pdf': 'application/pdf', 'messages.txt': 'text/plain'}
+             'trace-plots.pdf': 'application/pdf', 'messages.txt': 'text/plain',
+             'model-diagnostics.json': 'application/json'}
     for item in mcmc['artifacts']:
         require(isinstance(item, dict) and set(item) == {'name', 'mime', 'data'})
         name = item['name']

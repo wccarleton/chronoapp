@@ -2,6 +2,7 @@ import { projectState as state } from "./project-state.js";
 import { runDensity } from "./jobs.js?v=job-monitor-2";
 import { createSummaryPlot } from "./plots.js";
 import { createMcmcDiagnostics } from "./mcmc-diagnostics.js";
+import { createModelDiagnostics } from "./model-diagnostics.js";
 import { pagination, PAGE_SIZE } from "./pagination.js";
 import { DEFAULT_SAMPLING, samplingFor, samplingError, samplingControls } from "./sampling-settings.js";
 import { simulating, simulationFor, simulationError, simulationControls, csvDownload } from './simulation.js';
@@ -334,6 +335,7 @@ export function initSummarize({ process = false } = {}) {
             : `Completed in ${result.elapsed_seconds.toFixed(1)} s · ${result.sampling.chains} chains × ${result.sampling.draws} draws (${result.sampling.tune} tuning per chain) · ${result.sampling.cores ?? 1} cores. ${result.warnings.join(" ")}`, "help"));
           const plot = createSummaryPlot(resultContainer, result, summary.label);
           const mcmc = result.mode === 'simulate' ? { dispose() {} } : createMcmcDiagnostics(resultContainer, result.mcmc);
+          if (result.mode !== 'simulate') createModelDiagnostics(resultContainer, result.model_diagnostics);
           plots.set(summary.id, { dispose() { plot.dispose(); mcmc.dispose(); } });
           if (result.model === "gaussian_mixture") {
             const diagnostics = node("details", undefined, "mixture-diagnostics");
