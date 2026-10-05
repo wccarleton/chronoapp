@@ -1,4 +1,4 @@
-export const simulating = spec => ['density', 'single_density'].includes(spec.model) && spec.parameters.mode === 'simulate';
+export const simulating = spec => ['density', 'single_density', 'mixture'].includes(spec.model) && spec.parameters.mode === 'simulate';
 export function simulationFor(spec) {
   const p = spec.parameters.simulation ?? {};
   const distribution = p.distribution ?? 'calrcarbon';
@@ -7,8 +7,9 @@ export function simulationFor(spec) {
     draws: p.draws === undefined ? 1000 : p.draws };
 }
 export function simulationError(p) {
-  if (!Number.isInteger(p.n) || p.n < 1 || p.n > 100) return 'Simulate between 1 and 100 events per dataset.';
-  if (!Number.isInteger(p.draws) || p.draws < 2 || p.draws > 10000) return 'Use 2–10,000 independent predictive replicates.';
+  if (!Number.isInteger(p.n) || p.n < 1 || p.n > 10000) return 'Simulate between 1 and 10,000 events per dataset.';
+  if (!Number.isInteger(p.draws) || p.draws < 1 || p.draws > 10000) return 'Use 1–10,000 independent predictive replicates.';
+  if (p.n * p.draws > 1000000) return 'Events × replicates must not exceed 1,000,000.';
   if (!Number.isFinite(p.error) || p.error <= 0) return 'Measurement SD must be positive.';
   if (p.distribution === 'calrcarbon' && !p.curve) return 'Select a calibration curve.';
   return null;
@@ -23,8 +24,8 @@ export function simulationControls(spec, change) {
   };
   for (const [key, caption] of Object.entries({ n: 'Events per dataset (n)', draws: 'Independent predictive replicates', error: 'Measurement SD · years' })) {
     const input = document.createElement('input'); input.type = 'number'; input.step = key === 'error' ? 'any' : '1';
-    input.min = key === 'draws' ? '2' : key === 'error' ? '0' : '1';
-    if (key !== 'error') input.max = key === 'draws' ? '10000' : '100';
+    input.min = key === 'error' ? '0' : '1';
+    if (key !== 'error') input.max = '10000';
     input.value = p[key]; input.dataset.simulation = key;
     input.addEventListener('input', () => update({ [key]: input.value === '' ? null : Number(input.value) }));
     add(caption, input);
@@ -40,7 +41,7 @@ export function simulationControls(spec, change) {
     curve.value = p.curve; curve.addEventListener('change', () => update({ curve: curve.value })); add('Calibration curve', curve);
   }
   const note = document.createElement('p'); note.className = 'help';
-  note.textContent = 'Each replicate draws a new location and scale from the displayed hyperpriors, then event dates and measurements. No MCMC or tuning. SD is laboratory error for radiocarbon, calendar error for normal, and uniform half-width / √3. CSV exports the first dataset; only radiocarbon CSVs are currently importable.';
+  note.textContent = `${spec.model === 'mixture' ? 'Each replicate draws new component locations, scales and weights from the displayed hyperpriors. Gaussian components are unbounded; generated radiocarbon dates outside curve support cause a run error.' : 'Each replicate draws a new location and scale from the displayed hyperpriors.'} Each parameter set generates n event dates and measurements. Only the first random parameter draw and its dataset supply the CSV and measurement curves; the model density summarizes all parameter draws. Set replicates to 1 for one randomly drawn parameter set and n dates (not user-fixed parameters); the model band then collapses to one curve. Limits: n × replicates ≤ 1,000,000, with at most 10,000 events per dataset and 10,000 replicates. The plot shows at most the first 100 measurements; all n measurements are saved and exported. No MCMC or tuning. SD is laboratory error for radiocarbon, calendar error for normal, and uniform half-width / √3. Only radiocarbon CSVs are currently importable.`;
   section.append(note); return section;
 }
 export function csvDownload(result, title) {

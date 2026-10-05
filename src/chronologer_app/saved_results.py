@@ -33,7 +33,7 @@ def validate_saved_run(run):
     require(run['model'] in ('density', 'single_density', 'mixture', 'ippp_gp') and isinstance(run['parameters'], dict), 'model/settings')
     process = run['model'] == 'ippp_gp'
     simulation = run['parameters'].get('mode') == 'simulate'
-    require(not simulation or run['model'] == 'single_density', 'simulation model')
+    require(not simulation or run['model'] in ('single_density', 'mixture'), 'simulation model')
     require(isinstance(run['events'], list) and (len(run['events']) == 0 if simulation else 1 <= len(run['events']) <= 100), 'events')
     require(all(isinstance(e, dict) for e in run['events']), 'event records')
     r = run['result']
@@ -62,15 +62,20 @@ def validate_saved_run(run):
     validate_saved_sampling(run['parameters'], None if simulation else r)
     rows = run['events']
     if simulation:
-        from .api.density import SimulationSettings, DensitySettings, MixtureEvent
+        from .api.density import SimulationSettings, DensitySettings, MixtureSimulationSettings, MixtureEvent
         from chronologer.calcurves import DEFAULT_CURVES
         spec = r['simulation']
         require(r['mode'] == 'simulate' and isinstance(spec, dict)
-                and set(spec) == {'settings', 'events', 'exported_draw'}
+                and {'settings', 'events', 'exported_draw'} <= set(spec)
+                and not set(spec) - {'settings', 'events', 'exported_draw', 'event_density', 'plotted_events'}
+                and ('event_density' not in spec or spec['event_density'] == 'measurement')
                 and type(spec['exported_draw']) is int and spec['exported_draw'] == 0, 'simulation fields')
         try:
             resolved = SimulationSettings(**run['parameters']['simulation']).model_dump()
-            DensitySettings(**{key: run['parameters'][key] for key in ('older', 'younger', 'mean', 'mean_sd', 'sd_scale')})
+            if run['model'] == 'mixture':
+                MixtureSimulationSettings(**{key: run['parameters'][key] for key in ('K_max', 'prior_center', 'prior_scale')})
+            else:
+                DensitySettings(**{key: run['parameters'][key] for key in ('older', 'younger', 'mean', 'mean_sd', 'sd_scale')})
         except (KeyError, TypeError, ValueError):
             require(False, 'simulation settings')
         require(resolved == spec['settings'], 'simulation snapshot')
@@ -95,6 +100,10 @@ def validate_saved_run(run):
             else:
                 require(math.isclose(event.parameters['upper'] - event.parameters['lower'],
                                      2 * math.sqrt(3) * resolved['error'], rel_tol=1e-9), 'simulated uniform settings')
+        if 'plotted_events' in spec:
+            require(spec.get('event_density') == 'measurement' and type(spec['plotted_events']) is int
+                    and spec['plotted_events'] == min(len(rows), 100), 'simulation plot count')
+            rows = rows[:spec['plotted_events']]
     posterior = r[metadata_key]
     require(isinstance(posterior, dict) and set(posterior) == {'type', 'variables', 'sizes'}, 'posterior metadata only')
     require(posterior['type'] == 'xarray.DataTree' and isinstance(posterior['variables'], list)
@@ -135,6 +144,9 @@ def validate_saved_run(run):
             require(isinstance(values, list) and len(values) == k and all(number(v) and 0 <= v <= 1 for v in values), 'weight diagnostics')
         require(abs(sum(diagnostics['weight_mean']) - 1) < 1e-6, 'weight normalization')
         require(isinstance(diagnostics['priors'], dict) and all(number(v) for v in diagnostics['priors'].values()), 'priors')
+        if simulation:
+            require(diagnostics['priors'].get('center') == -run['parameters']['prior_center']
+                    and diagnostics['priors'].get('scale') == run['parameters']['prior_scale'], 'simulation mixture priors')
     else:
         require(not diagnostics, 'unexpected diagnostics')
     if 'mcmc' in r:

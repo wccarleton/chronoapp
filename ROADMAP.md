@@ -32,6 +32,28 @@ Defer remembered mappings, elaborate wizard steps, and additional import formats
 Initial effort estimate: roughly 20–40 minutes, including a few fast checks;
 this is a planning estimate rather than a deadline.
 
+## Larger inference selections and bulk event controls
+
+Replace the hard 100-event inference selection limit with a non-blocking
+computational resource warning. Retain the project's existing 10,000-event
+capacity; selecting more than 100 events should not prevent adding or fitting.
+
+- Keep individual event selection in **Add events from project**.
+- Add **Add this page (N)** for the visible, filtered page and **Add all
+  matching (N)** for all events matching the current filter across pages.
+- Skip events already selected; button counts should reflect new additions.
+- Show the selected event count. Above 100 selected events, display:
+  > Large selection: fitting time and memory use increase with event count,
+  > model complexity, draws, and chains. Consider starting with a smaller run.
+- Remove the 100-event restriction consistently from the UI, inference request
+  validation, and saved-summary validation, so there are no hidden limits.
+- Preserve pagination, independent summary event snapshots, saved-run
+  compatibility, and existing result invalidation when inputs change.
+
+Keep checks small: filtered page/all selection, duplicate skipping, a selection
+above 100 with a warning, and request/save compatibility without expensive fits.
+This is planned work; the inference limit remains in place until implemented.
+
 ## Branch plan
 
 Simulation is committed on `simulate` in both repos; Phase remains on its

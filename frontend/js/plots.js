@@ -419,6 +419,9 @@ class InteractivePlot {
 export function createSummaryPlot(container, result, title) {
   const simulation = result.mode === 'simulate';
   const process = result.model === 'ippp_gp';
+  const measurements = simulation && result.simulation.event_density === 'measurement';
+  const radiocarbon = measurements && result.simulation.settings.distribution === 'calrcarbon';
+  const eventLabel = radiocarbon ? 'Uncalibrated radiocarbon measurements' : measurements ? 'Simulated measurement densities' : 'Simulated latent event-date densities';
   const curve = process ? { ...result.intensity, pdf_values: result.intensity.rate_values } : result.density;
   const { t_values: times, pdf_values: mean, lower_values: low, upper_values: high } = curve;
   if (!Array.isArray(times) || times.length < 2 || !times.every(Number.isFinite)
@@ -428,20 +431,24 @@ export function createSummaryPlot(container, result, title) {
     throw new Error("The engine returned invalid density data.");
   }
   const base = { x: [times[0], times.at(-1)], y: [0, Math.max(...high, ...mean) * 1.08] };
+  if (measurements) for (const event of result.marginals.events) {
+    base.x[0] = Math.min(base.x[0], event.t_values[0]);
+    base.x[1] = Math.max(base.x[1], event.t_values.at(-1));
+  }
   const parameters = element("div", "summary-parameter-plots");
   if (result.marginals?.parameters?.length) container.append(parameters);
   const modelNote = simulation
-    ? 'Prior mean model density and pointwise 95% prior interval across independent predictive replicates. Translucent simulated event-date densities are histograms of generated latent dates, peak-scaled to 20% for display only. Events are exchangeable simulation slots. These are not fitted posteriors. CSV exports the first complete dataset; plots summarize all replicates.'
+    ? `Prior mean model density and pointwise 95% prior interval across independent predictive replicates. ${measurements ? 'Translucent curves show measurement distributions for the first generated dataset, matching the CSV, peak-scaled to 20% for display only. ' + (radiocarbon ? 'The model uses calendar BP; measurement curves use uncalibrated radiocarbon BP with laboratory SD. These are distinct age scales displayed on one numeric BP axis, not calibrated event densities.' : 'Measurement curves use calendar BP and the selected normal or uniform uncertainty.') : 'Translucent curves show histograms of generated latent calendar dates across replicates, peak-scaled to 20% for display only. This saved run predates measurement-density plots; rerun to show the exported measurements.'} These are not fitted posteriors.`
     : process
     ? 'Posterior mean event intensity and pointwise 95% credible interval across the declared observation period. Units: events per year; no area normalization. Translucent event-date posteriors are peak-scaled to 20% of the intensity curve for display only. Inspect MCMC diagnostics and sensitivity to the observation window, GP priors and grid.'
     : "Posterior mean model density and pointwise 95% credible interval, integrating location and scale uncertainty. Translucent event-date posteriors share the calendar axis, each peak scaled to 20% of the model curve peak (display only). Inspect MCMC diagnostics before interpretation.";
   const note = `${modelNote} Dates are expressed in years using the BP1950 datum (before AD 1950). ${simulation ? (result.simulation.settings.distribution === 'calrcarbon' ? 'Radiocarbon measurements are generated forward through the chosen curve with curve and laboratory uncertainty.' : 'Calendar measurements are generated with the selected measurement uncertainty.') : 'Where radiocarbon determinations are used, they are calibrated as part of modelling using each event’s selected calibration curve.'}`;
-  container.append(element("h3", "", simulation ? 'Model density and simulated event dates · BP1950' : process ? 'Event intensity and posterior event dates · BP1950' : "Model density and posterior event dates · BP1950"));
+  container.append(element("h3", "", simulation ? measurements ? 'Model density and simulated measurements · BP1950' : 'Model density and simulated event dates · BP1950' : process ? 'Event intensity and posterior event dates · BP1950' : "Model density and posterior event dates · BP1950"));
   const plot = new InteractivePlot(container, {
     title, subtitle: `${process ? 'GP IPPP' : result.model === "gaussian_mixture" ? "Gaussian mixture" : result.model === 'single_density' ? 'Single truncated-normal density' : "Truncated-normal radiocarbon hierarchy"} · Years (BP1950)`, label: process ? 'Event intensity (events/year)' : "Model density (1/year)", base, height: 510,
-    xLabel: "Years (BP1950)", domainUnits: "years (BP1950)",
+    xLabel: radiocarbon ? 'Age BP1950 · model: calendar; measurements: radiocarbon' : "Years (BP1950)", domainUnits: "years (BP1950)",
     visualLegend: { mean: simulation ? 'Prior mean model density' : process ? "Posterior mean event intensity" : "Posterior mean model density", events: Boolean(result.marginals?.events?.length),
-      ...(simulation ? { interval: '95% prior interval (pointwise)', eventLabel: 'Simulated event-date densities' } : {}) },
+      ...(simulation ? { interval: '95% prior interval (pointwise)', eventLabel } : {}) },
     exportNote: simulation ? note : `${note} ${result.divergences} divergences.`,
     domainApplied: domain => plot.setBase({ x: domain, y: base.y }),
     draw(group, x, y) {
@@ -456,7 +463,7 @@ export function createSummaryPlot(container, result, title) {
           fill: "currentColor", "fill-opacity": .16, stroke: "currentColor", "stroke-opacity": .35, "stroke-width": .8,
           "data-event-index": event.index,
         });
-        shape.append(svgElement("title", {}, `${event.id}: ${simulation ? 'simulated latent event dates' : 'model-conditioned event-date posterior'}; peak scaled for display`));
+        shape.append(svgElement("title", {}, `${event.id}: ${simulation ? eventLabel : 'model-conditioned event-date posterior'}; peak scaled for display`));
         group.append(shape);
       }
       group.append(svgElement("path", { d: path(times.map((t, i) => [x(t), y(mean[i])])), class: "data-line" }));

@@ -122,7 +122,8 @@ async def main():
                     const {posterior,...result}=mock;
                     window.mock={...result,mode:'simulate',sampling:{draws:4,tune:0,chains:1,cores:1,random_seed:912},
                       prior:{...posterior,sizes:{chain:1,draw:4,event:3}},
-                      simulation:{settings:structuredClone(state.data.summaries[0].parameters.simulation),events,exported_draw:0},
+                      simulation:{settings:structuredClone(state.data.summaries[0].parameters.simulation),events,exported_draw:0,event_density:'measurement'},
+                      density:{...result.density,t_values:[-5000,-4500,-4000]},
                       marginals:{parameters:result.marginals.parameters,events:events.map((e,index)=>({...result.marginals.events[index],id:e.id}))}};
                     const inferenceFetch=window.fetch;
                     window.fetch=async(url,options)=>{
@@ -132,6 +133,7 @@ async def main():
                     document.querySelector('.summary-fit').click();""")
                 await wait("!!document.querySelector('.simulation-download')", timeout=20)
                 assert await js("sent.simulation.n===3 && !sent.events && !sent.sampling && document.querySelector('.summary-result').innerText.includes('Prior') && state.data.summaries[0].saved_run.events.length===0")
+                assert await js("document.querySelector('.summary-result').innerText.includes('Uncalibrated radiocarbon measurements') && document.querySelector('.summary-result .domain-younger').value==='2450'")
                 assert await js("""const encoded=await originalFetch('/api/projects/encode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(state.data)});
                     if(!encoded.ok)throw Error(await encoded.text());
                     const decoded=await originalFetch('/api/projects/decode',{method:'POST',body:await encoded.blob()});
@@ -148,8 +150,32 @@ async def main():
                 assert len(imported['events']) == 3, imported
                 await js("document.querySelector('[data-mode=inference]').click()")
                 assert await js("!document.querySelector('.simulation-options') && !document.querySelector('.simulation-download') && state.data.summaries[0].events.length===4")
+                await js("""const select=document.querySelector('.phase-distribution');select.value='mixture';select.dispatchEvent(new Event('change'));
+                    document.querySelector('[data-mode=simulate]').click();
+                    const scale=document.querySelector('[data-setting=prior_scale]');scale.value=200;scale.dispatchEvent(new Event('input'));
+                    window.mock={...mock,model:'gaussian_mixture',marginals:{...mock.marginals,parameters:[]},
+                      prior:{type:'xarray.DataTree',variables:['means','scales','weights','tau','measured'],sizes:{chain:1,draw:4,event:3,component:5}},
+                      diagnostics:{priors:{center:-2500,scale:200,concentration:.3,log_scale_sd:.75,scale_fraction:.2},
+                        weight_mean:[.2,.2,.2,.2,.2],weight_below_005:[0,0,0,0,0],weight_interval:[[.1,.1,.1,.1,.1],[.3,.3,.3,.3,.3]]}};
+                    document.querySelector('.summary-fit').click();""")
+                await wait("!!document.querySelector('.simulation-download')", timeout=20)
+                assert await js("sent.model==='mixture' && sent.settings.K_max===5 && sent.settings.prior_scale===200 && !sent.settings.older && document.querySelector('.summary-fit').textContent==='Simulate mixture'")
+                assert await js("document.querySelector('.summary-result').innerText.includes('Uncalibrated radiocarbon measurements')")
+                assert await js("""const encoded=await originalFetch('/api/projects/encode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(state.data)});
+                    if(!encoded.ok)throw Error(await encoded.text());
+                    const decoded=await originalFetch('/api/projects/decode',{method:'POST',body:await encoded.blob()});
+                    if(!decoded.ok)throw Error(await decoded.text());
+                    (await decoded.json()).summaries[0].saved_run.result.model==='gaussian_mixture'""")
+                await js("""window.downloaded=null;document.querySelector('.simulation-download').click();""")
+                await wait("!!window.downloaded", timeout=5)
+                assert len(import_csv((await js('window.downloaded')).encode('utf-8'), 'mixture.csv')['events']) == 3
+                assert await js("""const {simulationError}=await import('/js/simulation.js');
+                    const spec=state.data.summaries[0].parameters.simulation;
+                    document.querySelector('[data-simulation=draws]').min==='1' &&
+                    !simulationError({...spec,n:10000,draws:1}) &&
+                    !!simulationError({...spec,n:10000,draws:101})""")
                 assert not errors, errors
-                print('PASS: single-density inference, simulation controls, plots, importer-ready CSV and archive round trips. No MCMC.')
+                print('PASS: density inference, single/mixture simulation controls, plots, importer-ready CSV and archive round trips. No MCMC.')
         finally:
             browser.terminate()
             browser.wait(timeout=10)

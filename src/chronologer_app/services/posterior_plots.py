@@ -12,7 +12,7 @@ def marginal(values):
             "pdf_values": np.repeat(heights, 2).tolist()}
 
 
-def posterior_plots(posterior, rows):
+def posterior_plots(posterior, rows, *, include_events=True):
     if 'intensity' in posterior:
         definitions = [('log_rate', 'Baseline log intensity', False),
                        ('amplitude', 'GP log-intensity amplitude', False),
@@ -24,7 +24,9 @@ def posterior_plots(posterior, rows):
     parameters = [{"name": name, "label": label, "calendar": calendar,
                    **marginal(posterior[name].values)}
                   for name, label, calendar in definitions if name in posterior]
-    dates = posterior["tau"].transpose("chain", "draw", ...).values
-    events = [{"id": row["id"], "index": i, **marginal(dates[..., i])}
-              for i, row in enumerate(rows)]
+    events = []
+    if include_events:
+        dates = posterior["tau"].transpose("chain", "draw", ...).values
+        events = [{"id": row["id"], "index": i, **marginal(dates[..., i])}
+                  for i, row in enumerate(rows)]
     return {"parameters": parameters, "events": events}

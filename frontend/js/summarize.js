@@ -20,7 +20,9 @@ const settingsFor = summary => summary.model === 'ippp_gp'
   ? { older: summary.parameters.older ?? null, younger: summary.parameters.younger ?? null,
       grid_size: summary.parameters.grid_size === undefined ? 32 : summary.parameters.grid_size }
   : summary.model === "mixture"
-  ? { K_max: summary.parameters.K_max === undefined ? 5 : summary.parameters.K_max }
+  ? { K_max: summary.parameters.K_max === undefined ? 5 : summary.parameters.K_max,
+      ...(simulating(summary) ? { prior_center: summary.parameters.prior_center === undefined ? 2500 : summary.parameters.prior_center,
+        prior_scale: summary.parameters.prior_scale === undefined ? 400 : summary.parameters.prior_scale } : {}) }
   : Object.fromEntries(Object.entries(defaults).map(([key, value]) => [key, summary.parameters[key] === undefined ? value : summary.parameters[key]]));
 const signature = summary => JSON.stringify([modelFor(summary), simulating(summary) ? 'simulate' : 'inference',
   simulating(summary) ? [] : summary.events, settingsFor(summary),
@@ -96,9 +98,9 @@ export function initSummarize({ process = false } = {}) {
       gloss.id = `model-gloss-${summary.id}`;
       select.setAttribute("aria-describedby", gloss.id);
       const simulation = simulating(summary);
-      if (simulation) gloss.textContent = 'Simulates the single truncated-normal hierarchy from the displayed hyperpriors, including uncertain event dates and noisy measurements. Outputs are prior predictive, not fitted posteriors.';
+      if (simulation) gloss.textContent = `Simulates ${summary.model === 'mixture' ? 'the Gaussian mixture' : 'the single truncated-normal hierarchy'} from the displayed hyperpriors, including uncertain event dates and noisy measurements. Outputs are prior predictive, not fitted posteriors.`;
       card.append(fields, gloss);
-      if (modelFor(summary) === 'single_density') {
+      if (!process) {
         const mode = node('fieldset', undefined, 'summary-mode'); mode.append(node('legend', 'Operation'));
         for (const value of ['inference', 'simulate']) {
           const label = node('label', value === 'inference' ? 'Inference' : 'Simulate');
@@ -220,11 +222,22 @@ export function initSummarize({ process = false } = {}) {
           update(summary.id, { parameters: { ...current.parameters, K_max: input.value === "" ? null : Number(input.value) } });
         });
         label.append(input); fitSettings.append(label);
-        fitSettings.append(node("p", "Normal, uniform, or radiocarbon measurements in BP1950. Each radiocarbon event uses its selected curve. Fixed sparse-weight and scale hyperpriors use a time scale derived from the input measurements. Inspect diagnostics before interpretation.", "help"));
+        if (simulation) {
+          for (const [key, caption] of Object.entries({ prior_center: 'Prior center · BP1950', prior_scale: 'Prior scale · years' })) {
+            const label = node('label', caption), input = node('input'); input.type = 'number'; input.step = 'any';
+            input.dataset.setting = key; input.value = settingsFor(summary)[key];
+            if (key === 'prior_scale') input.min = '0';
+            input.addEventListener('input', () => {
+              const current = specs().find(s => s.id === summary.id);
+              update(summary.id, { parameters: { ...current.parameters, [key]: input.value === '' ? null : Number(input.value) } });
+            }); label.append(input); fitSettings.append(label);
+          }
+          fitSettings.append(node('p', 'Component locations: ordered iid Normal(center, scale). Weights: symmetric Dirichlet(0.3). Component SDs: LogNormal(log(0.2 × scale), 0.75). Center and scale are explicit because simulation has no input dates. Components are unbounded; Maximum modes is an upper complexity allowance.', 'help'));
+        } else fitSettings.append(node("p", "Normal, uniform, or radiocarbon measurements in BP1950. Each radiocarbon event uses its selected curve. Fixed sparse-weight and scale hyperpriors use a time scale derived from the input measurements. Inspect diagnostics before interpretation.", "help"));
       }
       const fitStatus = node("p", running.has(summary.id) ? `${simulation ? 'Simulation' : 'Inference'} submitted. Progress, cancellation and messages are above the tabs; you can keep working elsewhere.` : failures.get(summary.id) ?? "", "summary-fit-status help");
       fitStatus.setAttribute("role", "status");
-      const run = button(simulation ? 'Simulate single density' : process ? 'Fit GP IPPP' : summary.model === "mixture" ? "Fit mixture" : "Fit single density", async () => {
+      const run = button(simulation ? summary.model === 'mixture' ? 'Simulate mixture' : 'Simulate single density' : process ? 'Fit GP IPPP' : summary.model === "mixture" ? "Fit mixture" : "Fit single density", async () => {
         const current = specs().find(s => s.id === summary.id);
         if (running.has(summary.id) || !current) return;
         const settings = settingsFor(current);
@@ -242,6 +255,9 @@ export function initSummarize({ process = false } = {}) {
         if (mixture && (!Number.isInteger(settings.K_max) || settings.K_max < 1 || settings.K_max > 20)) {
           fitStatus.textContent = "Maximum modes must be an integer from 1 to 20."; return;
         }
+        if (mixture && simulation && (![settings.prior_center, settings.prior_scale].every(v => typeof v === 'number' && Number.isFinite(v)) || settings.prior_scale <= 0)) {
+          fitStatus.textContent = 'Enter a finite prior center and positive prior scale.'; return;
+        }
         if (!simulation && (!current.events.length || current.events.some(e => !["calrcarbon", "normal", "uniform"].includes(e.distribution) || (e.datum ?? "BP1950") !== "BP1950"))) {
           fitStatus.textContent = "Add normal, uniform, or radiocarbon measurements using BP1950 before fitting."; return;
         }
@@ -256,7 +272,7 @@ export function initSummarize({ process = false } = {}) {
         const token = { id: current.id, generation, signature: signature(current) };
         running.set(current.id, token); results.delete(current.id); failures.delete(current.id); render();
         try {
-          const payload = simulation ? { settings, simulation: simulationFor(current) } : { ...(ippp ? { observation: settings } : mixture ? { K_max: settings.K_max } : { settings }),
+          const payload = simulation ? { model: modelFor(current), settings, simulation: simulationFor(current) } : { ...(ippp ? { observation: settings } : mixture ? { K_max: settings.K_max } : { settings }),
             events: current.events.map(e => ({ id: e.id, distribution: e.distribution,
               parameters: e.parameters, datum: e.datum ?? "BP1950" })) };
           const result = await runDensity({ ...payload, ...(simulation ? {} : { sampling }) }, `${state.data.metadata.project_name} / ${current.label}`);
@@ -321,7 +337,7 @@ export function initSummarize({ process = false } = {}) {
           plots.set(summary.id, { dispose() { plot.dispose(); mcmc.dispose(); } });
           if (result.model === "gaussian_mixture") {
             const diagnostics = node("details", undefined, "mixture-diagnostics");
-            diagnostics.append(node("summary", "Mixture diagnostics"));
+            diagnostics.append(node("summary", result.mode === 'simulate' ? 'Mixture prior summaries' : 'Mixture diagnostics'));
             diagnostics.append(node("p", `Mean component weights (ordered by calendar coordinate): ${result.diagnostics.weight_mean.map(w => w.toFixed(3)).join(", ")}. Component identities are not archaeological groups.`, "help"));
             diagnostics.append(node("p", `Fraction of draws with weight below 0.05: ${result.diagnostics.weight_below_005.map(w => w.toFixed(2)).join(", ")}. These describe weight uncertainty, not an inferred number of groups.`, "help"));
             resultContainer.append(diagnostics);

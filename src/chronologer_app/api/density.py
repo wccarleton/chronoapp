@@ -185,14 +185,16 @@ class SingleDensityJobRequest(BaseModel):
 
 class SimulationSettings(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    n: int = Field(default=10, strict=True, ge=1, le=100)
+    n: int = Field(default=10, strict=True, ge=1, le=10000)
     distribution: Literal['calrcarbon', 'normal', 'uniform'] = 'calrcarbon'
     error: Positive = 30.
     curve: str | None = 'intcal20'
-    draws: int = Field(default=1000, strict=True, ge=2, le=10000)
+    draws: int = Field(default=1000, strict=True, ge=1, le=10000)
 
     @model_validator(mode='after')
     def curve_for(self):
+        if self.n * self.draws > 1000000:
+            raise ValueError('Events × replicates must not exceed 1,000,000.')
         if self.distribution == 'calrcarbon' and not self.curve:
             raise ValueError('Select a curve for radiocarbon simulation.')
         if self.distribution != 'calrcarbon' and self.curve is not None:
@@ -200,11 +202,26 @@ class SimulationSettings(BaseModel):
         return self
 
 
+class MixtureSimulationSettings(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    K_max: int = Field(default=5, strict=True, ge=1, le=20)
+    prior_center: Finite
+    prior_scale: Positive
+
+
 class SimulationRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
+    model: Literal['single_density', 'mixture'] = 'single_density'
     simulation: SimulationSettings
-    settings: DensitySettings
+    settings: DensitySettings | MixtureSimulationSettings
     label: str = Field(default='Single density simulation', min_length=1, max_length=250)
+
+    @model_validator(mode='after')
+    def settings_for(self):
+        expected = MixtureSimulationSettings if self.model == 'mixture' else DensitySettings
+        if not isinstance(self.settings, expected):
+            raise ValueError('Simulation settings must match the selected model.')
+        return self
 
 
 @router.post('/simulation/jobs', status_code=202)
