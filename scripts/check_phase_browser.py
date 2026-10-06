@@ -115,6 +115,7 @@ async def main():
                 await wait("!!state.data.phase_model.saved_run && document.querySelectorAll('#phase-output .phase-result').length===2")
                 assert await js("document.querySelector('#phase-output').innerText.includes('Anchor separations') && document.querySelectorAll('#phase-output svg').length>=2")
                 assert await js("!!document.querySelector('.phase-delta-result svg') && document.querySelector('.phase-delta-result').innerText.includes('Late input delta')")
+                assert await js("document.querySelector('.phase-delta-title').textContent === '\u2192 Late' && document.querySelector('.phase-delta-result').parentElement.classList.contains('summary-parameter-plots')")
                 await wait("document.querySelectorAll('.phase-timeline path[data-phase-label]').length===2")
                 assert await js("document.querySelector('.phase-model-diagnostics').nextElementSibling.classList.contains('phase-timeline') && document.querySelector('.phase-model-diagnostics').textContent.includes('24')")
                 assert await js("""(()=>{

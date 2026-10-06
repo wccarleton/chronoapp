@@ -86,12 +86,14 @@ export function initPhaseRun() {
     output.append(node('p', 'Quantile estimates show posterior means, with 95% credible intervals in parentheses. Uniform intervals are exact distribution limits; normal intervals use the 5th and 95th percentiles. These are derived queries, not boundary parameters.', 'help'));
     if (result.diagnostics.deltas.length) {
       output.append(node('h3', 'Anchor separations'));
+      const deltas = node('div', undefined, 'summary-parameter-plots'); output.append(deltas);
       for (const delta of result.diagnostics.deltas) {
         if (!delta.predecessors) {
           output.append(node('p', `${delta.before} (${delta.anchors[0]}) → ${delta.after} (${delta.anchors[1]}): delta ${number(delta.mean)} years (95% interval ${number(delta.lower)}–${number(delta.upper)}).`, 'help'));
           continue;
         }
-        const section = node('section', undefined, 'phase-delta-result'); output.append(section);
+        const section = node('section', undefined, 'phase-delta-result summary-parameter-plot'); deltas.append(section);
+        section.append(node('h3', `\u2192 ${delta.after}`, 'phase-delta-title'));
         section.append(node('p', `${delta.after} input delta to q=${delta.anchor}: ${number(delta.mean)} years (95% interval ${number(delta.lower)}–${number(delta.upper)}). Reference: youngest of ${delta.predecessors.map(p => `${p.label} q=${p.anchor}`).join(', ')}.`, 'help'));
         if (delta.predecessors.length > 1) section.append(node('p', `Reference shares: ${delta.predecessors.map(p => `${p.label}: ${(100 * p.share).toFixed(1)}%`).join(', ')}. Exact ties share credit equally.`, 'help'));
         plots.push(createDeltaPlot(section, delta));
