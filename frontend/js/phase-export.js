@@ -88,12 +88,14 @@ export function phaseSvg(project) {
   const layer = svgNode('g', { id: 'phases' });
   nodes.forEach((node, index) => {
     const { phase } = node;
+    const members = (project.events ?? []).filter(event => event.label === phase.label).length;
     const group = svgNode('g', { id: `phase-node-${index}`, 'data-phase-id': phase.id,
-      'data-distribution': phase.distribution, transform: `translate(${node.x} ${node.y})` });
+      'data-distribution': phase.distribution, 'data-event-count': members, transform: `translate(${node.x} ${node.y})` });
     group.append(svgNode('title', {}, `${phase.label} — ${profiles[phase.distribution].label}`));
     const shape = svgNode('g', { 'data-part': 'distribution' });
     shape.append(svgNode('path', { d: profilePath(phase.distribution, { x: 0, y: 0, width: W, height: H, extent: node.extent }),
-      fill: '#d5e9ed', stroke: '#315f6b', 'stroke-width': 1.5 })); group.append(shape);
+      fill: members ? '#d5e9ed' : '#eee1cb', stroke: members ? '#315f6b' : '#956539', 'stroke-width': 1.5 })); group.append(shape);
+    if (!members) group.append(svgNode('text', { x: 0, y: H + 18, fill: '#956539', 'data-part': 'membership' }, 'No observed events'));
     const anchors = svgNode('g', { 'data-part': 'anchors' });
     node.anchors.forEach((p, i) => {
       const a = point(node, i), x = a.x - node.x, y = a.y - node.y;

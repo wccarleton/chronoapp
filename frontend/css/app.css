@@ -716,6 +716,9 @@ select {
 #run-log-location { overflow-wrap:anywhere; }
 .phase-density path { fill:#c8e2de; stroke:var(--accent); stroke-width:1.5; }
 [data-theme=dark] .phase-density path { fill:#294c50; }
+.phase-card.no-data .phase-density path { fill:#eee1cb; stroke:#956539; }
+.phase-membership { color:var(--muted); font-size:11px; }
+[data-theme=dark] .phase-card.no-data .phase-density path { fill:#554632; stroke:#d7ad78; }
 @media(max-width:520px) {
   .phase-workspace { padding:12px; }
   .phase-canvas { padding:0; }

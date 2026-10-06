@@ -118,11 +118,21 @@ The optional `phase_model` object is stored in `data/phase_model.json`. It has
 phase IDs. `ordered` enables or disables applying the saved connections without
 deleting them. Explicit edges define precedence independently of positions and
 list order; an empty edge list means no relationships. Each source's younger
-(or sole) anchor connects to its target's older anchor. Only disjoint chains are
-supported by the existing engine; cycles, self-connections, duplicate edges,
-branching and nonexistent IDs are rejected. Phase-specific optional `prior_center`
+(or sole) anchor connects to its target's older anchor. Branching and merging
+are supported; cycles, self-connections, duplicate edges and nonexistent IDs
+are rejected. Phase-specific optional `prior_center`
 (BP1950) and `prior_scale` (years) live in each card's parameters. Conversion to
 native negative BP happens only in the service adapter.
+
+Each non-root phase owns one input delta from the exact youngest connected
+predecessor anchor. Its optional card `parameters.delta_scale` overrides the
+legacy model-wide `delta_scale`; Auto uses the largest resolved reference scale
+of receiver and predecessors. New saved results store per-receiver delta
+posterior PDFs, numerical intervals and predecessor reference shares (ties split
+equally), rather than one delta per edge. Older per-edge chain summaries remain
+loadable. Root phases have no input delta. Delta is anchor separation, not a
+gap/hiatus label. No-data cards and SVG shapes use muted amber and explicit
+“No observed events” labels; fitting them remains deferred.
 
 Legacy model-wide `anchors` presets remain readable: `center` gives a sole .5
 anchor, `end_start` gives 0/1 for uniform and .05/.95 for normal phases, and `none`

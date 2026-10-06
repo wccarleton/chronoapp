@@ -57,11 +57,14 @@ export function initPhase() {
       const current = edges();
       if (![source, target].every(id => specs().some(phase => phase.id === id))) return 'Both phases must exist.';
       if (source === target) return 'A phase cannot connect to itself.';
-      if (current.some(edge => edge.source === source || edge.target === target)) return 'Only chains are supported: one predecessor and one successor per phase.';
-      let id = target;
-      while (id) {
+      if (current.some(edge => edge.source === source && edge.target === target)) return 'This connection already exists.';
+      if (current.length >= 100) return 'The canvas supports at most 100 connections.';
+      const pending = [target], visited = new Set();
+      while (pending.length) {
+        const id = pending.pop();
         if (id === source) return 'Connections cannot form a cycle.';
-        id = current.find(edge => edge.source === id)?.target;
+        if (visited.has(id)) continue;
+        visited.add(id); pending.push(...current.filter(edge => edge.source === id).map(edge => edge.target));
       }
       setEdges([...current, { source, target }]); return null;
     },
@@ -98,6 +101,7 @@ export function initPhase() {
       controls.id = `phase-fields-${phase.id}`;
       const content = node('div', 'phase-content');
       const toggle = node('button', 'phase-toggle', phase.label);
+      const membershipBadge = node('span', 'phase-membership');
       toggle.type = 'button'; toggle.setAttribute('aria-controls', controls.id);
       function refreshCollapse() {
         const closed = collapsed.has(phase.id);
@@ -110,7 +114,7 @@ export function initPhase() {
         if (collapsed.has(phase.id)) collapsed.delete(phase.id); else collapsed.add(phase.id);
         refreshCollapse(); surface.draw();
       });
-      content.append(toggle, controls); refreshCollapse();
+      content.append(toggle, membershipBadge, controls); refreshCollapse();
       const nameLabel = node("label", "", "Phase name");
       const input = node("input", "phase-name");
       input.value = phase.label;
@@ -162,15 +166,21 @@ export function initPhase() {
       controls.append(olderLabel, youngerLabel, anchorStatus);
       refreshAnchors();
       const members = () => (state.data?.events ?? []).filter(event => event.label === input.value).length;
-      const membership = node('p', 'help', `${members()} project events with this label`);
-      input.addEventListener('input', () => { membership.textContent = `${members()} project events with this label`; });
+      const membership = node('p', 'help');
+      function refreshMembership() {
+        card.classList.toggle('no-data', members() === 0);
+        membershipBadge.hidden = members() > 0;
+        membershipBadge.textContent = 'No observed events';
+        membership.textContent = members() ? `${members()} project events with this label` : 'No observed events · fitting unobserved phases is not yet supported.';
+      }
+      refreshMembership(); input.addEventListener('input', refreshMembership);
       const priors = node('details', 'phase-priors');
       priors.append(node('summary', '', 'Phase priors (optional)'));
-      for (const [key, caption] of Object.entries({ prior_center: 'Location prior mean · years (BP1950)', prior_scale: 'Location prior SD / reference time scale · years' })) {
+      for (const [key, caption] of Object.entries({ prior_center: 'Location prior mean · years (BP1950)', prior_scale: 'Location prior SD / reference time scale · years', delta_scale: 'Input delta prior scale · years (non-root phases)' })) {
         const label = node('label', '', caption), field = node('input');
         field.type = 'number'; field.step = 'any'; field.value = phase.parameters[key] ?? '';
-        field.placeholder = 'Auto from labelled measurements';
-        if (key === 'prior_scale') field.min = '0';
+        field.placeholder = key === 'delta_scale' ? 'Legacy model setting, otherwise Auto' : 'Auto from labelled measurements';
+        if (key !== 'prior_center') field.min = '0';
         field.addEventListener('input', () => {
           const current = specs().find(item => item.id === phase.id);
           update(phase.id, { parameters: { ...current.parameters, [key]: field.value === '' ? null : Number(field.value) } });

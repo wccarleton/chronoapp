@@ -91,7 +91,7 @@ async def main():
                       phases:project.phases.map((p,i)=>({label:p.label,distribution:p.distribution,density:{...density,t_values:i?[-2300,-2100,-1900]:density.t_values},
                         interval:{p:p.distribution==='uniform'?0:.05,q:p.distribution==='uniform'?1:.95,lower:estimate(-2550),upper:estimate(-2400)},parameters:[parameter('mu',true),parameter('scale',false)]})),
                       marginals:{parameters:[],events:[{id:'a',index:0,t_values:[-2530,-2500,-2470],pdf_values:[0,.03,0]},{id:'b',index:1,t_values:[-2230,-2200,-2170],pdf_values:[0,.03,0]}]},
-                      diagnostics:{deltas:[{before:'Early',after:'Late',anchors:[.25,.2],...estimate(100)}]}};
+                      diagnostics:{deltas:[{after:'Late',anchor:.2,predecessors:[{label:'Early',anchor:.25,share:1}],density:{t_values:[50,100,150],pdf_values:[0,.01,0]},...estimate(100)}]}};
                     const job=()=>({id:'phase-mock',label:'Phase model',status:finished?'completed':'running',stage:finished?'Completed':'Sampling',elapsed_seconds:1,total:8,completed:finished?8:4});
                     window.fetch=async(url,options)=>{
                       let data;
@@ -114,6 +114,7 @@ async def main():
                 await js('finished=true')
                 await wait("!!state.data.phase_model.saved_run && document.querySelectorAll('#phase-output .phase-result').length===2")
                 assert await js("document.querySelector('#phase-output').innerText.includes('Anchor separations') && document.querySelectorAll('#phase-output svg').length>=2")
+                assert await js("!!document.querySelector('.phase-delta-result svg') && document.querySelector('.phase-delta-result').innerText.includes('Late input delta')")
                 await wait("document.querySelectorAll('.phase-timeline path[data-phase-label]').length===2")
                 assert await js("document.querySelector('.phase-model-diagnostics').nextElementSibling.classList.contains('phase-timeline') && document.querySelector('.phase-model-diagnostics').textContent.includes('24')")
                 assert await js("""(()=>{
@@ -214,17 +215,30 @@ async def main():
                     const restoredCanvas=await loadedCanvas.json();
                     JSON.stringify(restoredCanvas.phases)===JSON.stringify(state.data.phases) && JSON.stringify(restoredCanvas.phase_model)===JSON.stringify(state.data.phase_model)""")
                 assert not errors, errors
+                await js("""const dag=structuredClone(state.data.phases);
+                    dag.push({id:'p2',label:'Missing',order:2,distribution:'normal',parameters:{delta_scale:50},anchors:[.05,.95],position:{x:600,y:300}},
+                             {id:'p3',label:'End',order:3,distribution:'uniform',parameters:{},anchors:[0,1],position:{x:600,y:20}});
+                    state.setPhaseCanvas(dag,[{source:'p0',target:'p1'}]);
+                    for(const [source,target] of [['p0','p2'],['p1','p3'],['p2','p3']]) {
+                      document.querySelector(`[data-phase-id="${source}"] .phase-output`).click();
+                      document.querySelector(`[data-phase-id="${target}"] .phase-input`).click();}
+                    if(state.data.phase_model.parameters.edges.length!==4)throw Error('Branch/merge rejected');
+                    document.querySelector('[data-phase-id="p3"] .phase-output').click();document.querySelector('[data-phase-id="p0"] .phase-input').click();
+                    if(state.data.phase_model.parameters.edges.length!==4 || !document.querySelector('#phase-status').textContent.includes('cycle'))throw Error('DAG cycle accepted');
+                    if(document.querySelectorAll('.phase-card.no-data').length!==2 || !document.querySelector('#phase-fit-status').textContent.includes('Unobserved'))throw Error('No-data indicator');""")
                 await js("""const {phaseSvg}=await import('/js/phase-export.js');window.phaseSvg=phaseSvg;
                     window.mapProject=structuredClone(state.data);
                     mapProject.metadata.project_name='Example phase map';
                     mapProject.phases=mapProject.phases.slice(0,2);
                     mapProject.phases[0]={...mapProject.phases[0],label:'A <older>',distribution:'uniform',anchors:[0,1],position:{x:50,y:400}};
                     mapProject.phases[1]={...mapProject.phases[1],label:'B & younger',distribution:'normal',anchors:[.05,.95],position:{x:450,y:50}};
+                    mapProject.events=[{label:'A <older>'}];
                     mapProject.phase_model.parameters={ordered:true,edges:[{source:'p0',target:'p1'}]};
                     window.mapText=phaseSvg(mapProject);
                     window.mapDoc=new DOMParser().parseFromString(mapText,'image/svg+xml');
                     if(mapDoc.querySelector('parsererror'))throw Error('Invalid SVG XML');
                     if(mapDoc.querySelectorAll('#phases > g').length!==2 || mapDoc.querySelector('rect,script,image'))throw Error('Unexpected assets');
+                    if(mapDoc.querySelector('[data-phase-id="p0"]').getAttribute('data-event-count')!=='1' || mapDoc.querySelector('[data-phase-id="p1"] [data-part="membership"]').textContent!=='No observed events')throw Error('SVG no-data indicator');
                     const circles=[...mapDoc.querySelectorAll('circle')];
                     if(circles.length!==4 || +circles[0].getAttribute('cy')!==260 || +circles[1].getAttribute('cy')!==0)throw Error('Uniform anchors');
                     if(Math.abs(+circles[2].getAttribute('cy')-(.5+1.64485362695/(20/3))*260)>.001)throw Error('Normal quantile placement');

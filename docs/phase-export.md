@@ -21,3 +21,9 @@ connections, phases, labels and anchor marks are separate editable groups. Each
 phase group retains its stable ID in `data-phase-id`; edges retain `data-source`
 and `data-target`. Metadata records the phase specs, edges and enabled state.
 Open it in a vector editor to isolate portions or arrange them across pages.
+
+Branches and merges use explicit edges. Each receiving phase has one input
+delta from the youngest connected predecessor anchor, even when several arrows
+enter it. Phases without exact matching event labels have muted amber shapes
+and a “No observed events” label in both the builder and SVG. The SVG can export
+these hypotheses, but inference currently requires measurements in every phase.

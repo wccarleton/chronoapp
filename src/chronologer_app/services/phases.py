@@ -19,7 +19,7 @@ def specification(request):
         center = p.get('prior_center')
         specs[row['label']] = chronologer.Phase(
             row['distribution'], prior_center=None if center is None else -center,
-            prior_scale=p.get('prior_scale'))
+            prior_scale=p.get('prior_scale'), delta_scale=p.get('delta_scale'))
     settings = request['settings']
     orders = []
     for a, b in connections(request['phases'], settings):
@@ -78,8 +78,23 @@ def fit_in_worker(request, sampling, progress_callback=None):
     if progress_callback:
         total = sampling['chains'] * (sampling['draws'] + sampling['tune'])
         progress_callback(dict(stage='Generating phase plots and MCMC diagnostics', completed=total, total=total))
-    deltas = [dict(before=order.before, after=order.after, anchors=list(order.anchors),
-                   **estimate(posterior['delta'].isel(order=i).values)) for i, order in enumerate(orders)]
+    deltas = []
+    for label in specs:
+        incoming = [order for order in orders if order.after == label]
+        if not incoming:
+            continue
+        values = posterior['delta'].sel(input_phase=label).values
+        reference = np.stack([specs[order.before].quantile(order.anchors[0],
+            posterior['mu'].sel(phase=order.before).values,
+            posterior['scale'].sel(phase=order.before).values) for order in incoming])
+        youngest = reference.max(axis=0)
+        winners = reference == youngest
+        # Split exact ties so reference shares always sum to one.
+        shares = (winners / winners.sum(axis=0)).mean(axis=(1, 2))
+        deltas.append(dict(after=label, anchor=incoming[0].anchors[1],
+            predecessors=[dict(label=order.before, anchor=order.anchors[0], share=float(shares[i]))
+                          for i, order in enumerate(incoming)],
+            **estimate(values), density=marginal(values)))
     plots = phase_plots(posterior, specs)
     try:
         model_diagnostics = waic(rows, specs, measurements=observations, posterior=posterior)

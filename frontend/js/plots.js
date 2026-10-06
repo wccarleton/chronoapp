@@ -511,6 +511,20 @@ export function createSummaryPlot(container, result, title) {
 }
 
 /** Overlay fitted phase densities on their shared calendar and density axes. */
+export function createDeltaPlot(container, delta) {
+  const { t_values: times, pdf_values: values } = delta.density;
+  const base = { x: [times[0], times.at(-1)], y: [0, Math.max(...values) * 1.1] };
+  const plot = new InteractivePlot(container, {
+    title: `${delta.after} input delta`, subtitle: 'Posterior anchor separation',
+    label: 'Posterior density / year', calendar: false, xLabel: 'Delta (years)',
+    base, height: 230, domainApplied: domain => plot.setBase({ x: domain, y: base.y }),
+    exportNote: 'Positive separation from the youngest selected predecessor anchor to the receiving phase anchor. Delta is not necessarily a gap or hiatus.',
+    draw(group, x, y) { group.append(svgElement('path', {
+      d: path(times.map((t, i) => [x(t), y(values[i])])), class: 'data-line' })); },
+  });
+  return plot;
+}
+
 export function createPhasePlot(container, phases) {
   const palette = ["#176e73", "#c05a24", "#7762b0", "#a33e70", "#54822e", "#327aba"];
   const colors = new Map([...phases].map(phase => phase.label).sort().map((label, i) => [label, palette[i % palette.length]]));

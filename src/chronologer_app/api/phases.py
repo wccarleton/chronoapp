@@ -22,6 +22,7 @@ class Priors(BaseModel):
     model_config = ConfigDict(extra='forbid')
     prior_center: Finite | None = None  # BP1950 in the app, negative BP in the engine.
     prior_scale: Positive | None = None
+    delta_scale: Positive | None = None
 
 
 class PhaseSpec(BaseModel):
@@ -71,7 +72,7 @@ class PhaseRequest(BaseModel):
         if [p.order for p in self.phases] != list(range(len(self.phases))):
             raise ValueError('Phase order must match its list index; explicit connections define chronology.')
         if set(labels) != {e.label for e in self.events}:
-            raise ValueError('Each phase needs events with exactly the same label; all submitted labels must have a phase.')
+            raise ValueError('Each phase currently needs matching labelled events; unobserved-phase fitting is deferred. All submitted labels must have a phase.')
         connections([p.model_dump() for p in self.phases], self.settings.model_dump())
         return self
 

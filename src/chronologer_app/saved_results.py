@@ -175,10 +175,29 @@ def validate_saved_run(run):
     if phase:
         from .services.phases import specification
         _, orders = specification(request.model_dump())
-        require(set(diagnostics) == {'deltas'} and isinstance(diagnostics['deltas'], list) and len(diagnostics['deltas']) == len(orders), 'phase delta count')
-        for item, order in zip(diagnostics['deltas'], orders):
-            require(isinstance(item, dict) and set(item) == {'before', 'after', 'anchors', 'mean', 'lower', 'upper'}, 'phase delta fields')
-            require(item['before'] == order.before and item['after'] == order.after and item['anchors'] == list(order.anchors), 'phase delta identity')
+        require(set(diagnostics) == {'deltas'} and isinstance(diagnostics['deltas'], list), 'phase delta count')
+        legacy = bool(diagnostics['deltas']) and 'before' in diagnostics['deltas'][0]
+        receivers = list(dict.fromkeys(order.after for order in orders))
+        require(len(diagnostics['deltas']) == (len(orders) if legacy else len(receivers)), 'phase delta count')
+        seen = set()
+        for i, item in enumerate(diagnostics['deltas']):
+            if legacy:
+                order = orders[i]
+                require(isinstance(item, dict) and set(item) == {'before', 'after', 'anchors', 'mean', 'lower', 'upper'}, 'phase delta fields')
+                require(item['before'] == order.before and item['after'] == order.after and item['anchors'] == list(order.anchors), 'phase delta identity')
+            else:
+                require(isinstance(item, dict) and set(item) == {'after', 'anchor', 'predecessors', 'mean', 'lower', 'upper', 'density'}, 'phase delta fields')
+                require(item['after'] in receivers and item['after'] not in seen, 'phase delta identity'); seen.add(item['after'])
+                incoming = [order for order in orders if order.after == item['after']]
+                require(item['anchor'] == incoming[0].anchors[1] and isinstance(item['predecessors'], list)
+                        and len(item['predecessors']) == len(incoming), 'phase delta reference')
+                for predecessor, order in zip(item['predecessors'], incoming):
+                    require(isinstance(predecessor, dict) and set(predecessor) == {'label', 'anchor', 'share'}
+                            and predecessor['label'] == order.before and predecessor['anchor'] == order.anchors[0]
+                            and number(predecessor['share']) and 0 <= predecessor['share'] <= 1, 'phase predecessor share')
+                require(math.isclose(sum(p['share'] for p in item['predecessors']), 1, abs_tol=1e-9), 'phase reference normalization')
+                require(isinstance(item['density'], dict) and set(item['density']) == {'t_values', 'pdf_values'}, 'phase delta density')
+                arrays(item['density'])
             require(all(number(item[k]) and item[k] > 0 for k in ('mean', 'lower', 'upper')) and item['lower'] <= item['upper'], 'phase delta estimates')
     elif process:
         require(set(diagnostics) == {'start', 'end', 'grid_size', 'baseline_count', 'log_rate_sd', 'amplitude_scale', 'length_scale_median', 'length_scale_log_sd'}, 'GP specification')

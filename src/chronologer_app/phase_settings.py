@@ -23,23 +23,29 @@ def connections(phases, settings):
     if not isinstance(edges, list) or len(edges) > 100:
         raise ValueError('Phase edges must be a list of at most 100 connections.')
     nodes = {phase['id']: phase for phase in phases}
-    incoming, outgoing = set(), {}
+    seen, outgoing = set(), {node: [] for node in nodes}
     pairs = []
     for edge in edges:
         if (not isinstance(edge, dict) or set(edge) != {'source', 'target'}
                 or not all(isinstance(edge[k], str) and edge[k] in nodes for k in ('source', 'target'))):
             raise ValueError('Phase connections require existing source and target IDs.')
         a, b = edge['source'], edge['target']
-        if a == b or a in outgoing or b in incoming:
-            raise ValueError('Phase connections support only chains, without self-connections or branching.')
-        outgoing[a] = b; incoming.add(b)
+        if a == b or (a, b) in seen:
+            raise ValueError('Phase connections cannot be duplicate or self-connections.')
+        seen.add((a, b)); outgoing[a].append(b)
         pairs.append((nodes[a], nodes[b]))
-    for root in outgoing:
-        visited, current = set(), root
-        while current in outgoing:
-            if current in visited:
-                raise ValueError('Phase connections cannot form cycles.')
-            visited.add(current); current = outgoing[current]
+    visited, active = set(), set()
+    def visit(node):
+        if node in active:
+            raise ValueError('Phase connections cannot form cycles.')
+        if node in visited:
+            return
+        active.add(node)
+        for target in outgoing[node]:
+            visit(target)
+        active.remove(node); visited.add(node)
+    for node in nodes:
+        visit(node)
     return pairs if ordered(settings) else []
 
 

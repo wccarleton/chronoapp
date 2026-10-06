@@ -39,16 +39,33 @@ def test_phase_submission_and_validation(monkeypatch):
         assert client.post('/api/phases/jobs', json=invalid).status_code == 422
 
 
-def test_phase_worker_and_saved_run(monkeypatch):
-    request = phases.PhaseRequest(**payload()).model_dump()
+@pytest.mark.parametrize('dag', [False, True])
+def test_phase_worker_and_saved_run(monkeypatch, dag):
+    data = payload()
+    if dag:
+        data['phases'].extend(dict(id=f'phase-{i}', label=label, distribution='normal', order=i,
+                                  parameters={'delta_scale': 40}, anchors=[.05, .95])
+                              for i, label in enumerate(['Middle', 'Final'], start=2))
+        data['events'].extend(dict(id=label, label=label, distribution='normal', parameters=dict(mean=mean, sd=20))
+                              for label, mean in [('Middle', 2250), ('Final', 1800)])
+        data['settings'].update(edges=[dict(source=f'phase-{a}', target=f'phase-{b}')
+                                      for a, b in [(0,1),(0,2),(1,3),(2,3)]])
+    request = phases.PhaseRequest(**data).model_dump()
     sampling = {**request['sampling'], 'random_seed': 912}
     values = np.arange(4, dtype=float).reshape(1, 4, 1)
     posterior = xr.Dataset({
         'mu': (('chain', 'draw', 'phase'), np.concatenate([-2500 + values, -2200 + values], axis=-1)),
         'scale': (('chain', 'draw', 'phase'), np.concatenate([100 + values, 20 + values], axis=-1)),
         'tau': (('chain', 'draw', 'event'), np.concatenate([-2500 + values, -2200 + values, -2450 + values], axis=-1)),
-        'delta': (('chain', 'draw', 'order'), 100 + values),
-    }, coords={'phase': ['Early', 'Late']})
+        'delta': (('chain', 'draw', 'input_phase'), 100 + values),
+    }, coords={'phase': ['Early', 'Late'], 'input_phase': ['Late']})
+    if dag:
+        posterior = xr.Dataset({
+            'mu': (('chain','draw','phase'), np.concatenate([-2500+values,-2200+values,-2350+100*values,-1800+values], axis=-1)),
+            'scale': (('chain','draw','phase'), np.concatenate([100+values,20+values,20+values,20+values], axis=-1)),
+            'tau': (('chain','draw','event'), np.concatenate([-2500+values,-2200+values,-2450+values,-2250+values,-1800+values], axis=-1)),
+            'delta': (('chain','draw','input_phase'), np.repeat(100+values,3,axis=-1)),
+        }, coords={'phase':['Early','Late','Middle','Final'], 'input_phase':['Late','Middle','Final']})
     stats = xr.Dataset({'diverging': (('chain', 'draw'), np.zeros((1, 4), dtype=bool))})
     trace = xr.DataTree.from_dict({'posterior': posterior, 'sample_stats': stats})
     captured = {}
@@ -70,8 +87,13 @@ def test_phase_worker_and_saved_run(monkeypatch):
     assert captured['measurements'][0].mean() == -2500
     assert result['phases'][0]['interval']['lower']['mean'] == pytest.approx(-2549.25)
     assert updates[-1]['completed'] == updates[-1]['total'] == 8
-    assert len(result['marginals']['events']) == 3
-    assert result['model_diagnostics']['n_events'] == 3
+    assert len(result['marginals']['events']) == len(request['events'])
+    assert result['model_diagnostics']['n_events'] == len(request['events'])
+    if dag:
+        assert captured['specs']['Final'].delta_scale == 40
+        assert len(result['diagnostics']['deltas']) == 3  # Four edges, three receiving phases.
+        final = next(d for d in result['diagnostics']['deltas'] if d['after'] == 'Final')
+        assert [p['share'] for p in final['predecessors']] == [.5,.5]
     assert result['model_diagnostics']['likelihood'] == 'event_marginal'
     assert np.isfinite(result['model_diagnostics']['waic'])
     assert np.trapezoid(result['phases'][1]['density']['pdf_values'], result['phases'][1]['density']['t_values']) == pytest.approx(1, abs=1e-6)
@@ -82,6 +104,10 @@ def test_phase_worker_and_saved_run(monkeypatch):
                        events=deepcopy(request['events']), parameters=deepcopy(parameters), result=result))
     assert load_project(dump_project(project)) == project
     legacy = deepcopy(project)
+    if not dag:
+        delta = legacy['phase_model']['saved_run']['result']['diagnostics']['deltas'][0]
+        legacy['phase_model']['saved_run']['result']['diagnostics']['deltas'] = [dict(before='Early', after='Late', anchors=[1., .05],
+            **{key: delta[key] for key in ('mean', 'lower', 'upper')})]
     del legacy['phase_model']['saved_run']['result']['model_diagnostics']
     assert load_project(dump_project(legacy)) == legacy
     invalid_score = deepcopy(project)

@@ -1,6 +1,6 @@
 import { projectState as state } from './project-state.js';
 import { runDensity } from './jobs.js?v=job-monitor-2';
-import { createSummaryPlot, createPhasePlot } from './plots.js';
+import { createSummaryPlot, createPhasePlot, createDeltaPlot } from './plots.js';
 import { createMcmcDiagnostics } from './mcmc-diagnostics.js';
 import { DEFAULT_SAMPLING, samplingFor, samplingError, samplingControls } from './sampling-settings.js';
 import { phaseSettings, phaseCopy, anchorError } from './phase-settings.js';
@@ -49,9 +49,11 @@ export function initPhaseRun() {
     for (const phase of data.phases) {
       const problem = anchorError(phase);
       if (problem) return `${phase.label}: ${problem}`;
+      const delta = phase.parameters.delta_scale;
+      if (delta != null && !(Number.isFinite(delta) && delta > 0)) return `${phase.label}: input delta prior scale must be positive or blank.`;
     }
     const empty = labels.filter(label => !data.events.some(event => event.label === label));
-    if (empty.length) return `No matching event labels for: ${empty.join(', ')}. Edit the names above or the labels in Project.`;
+    if (empty.length) return `No observed events for: ${empty.join(', ')}. Unobserved-phase fitting is deferred; add matching labels or remove these phases before fitting.`;
     if (data.events.length > 100) return 'This phase model currently supports at most 100 matching events.';
     if (data.events.some(event => event.datum !== 'BP1950' || !['normal', 'uniform', 'calrcarbon'].includes(event.distribution))) return 'Phase modelling requires normal, uniform or radiocarbon measurements using BP1950.';
     if (data.settings.delta_scale !== null && !(Number.isFinite(data.settings.delta_scale) && data.settings.delta_scale > 0)) return 'Delta prior scale must be positive, or blank for Auto.';
@@ -84,7 +86,16 @@ export function initPhaseRun() {
     output.append(node('p', 'Quantile estimates show posterior means, with 95% credible intervals in parentheses. Uniform intervals are exact distribution limits; normal intervals use the 5th and 95th percentiles. These are derived queries, not boundary parameters.', 'help'));
     if (result.diagnostics.deltas.length) {
       output.append(node('h3', 'Anchor separations'));
-      for (const delta of result.diagnostics.deltas) output.append(node('p', `${delta.before} (${delta.anchors[0]}) → ${delta.after} (${delta.anchors[1]}): delta ${number(delta.mean)} years (95% interval ${number(delta.lower)}–${number(delta.upper)}).`, 'help'));
+      for (const delta of result.diagnostics.deltas) {
+        if (!delta.predecessors) {
+          output.append(node('p', `${delta.before} (${delta.anchors[0]}) → ${delta.after} (${delta.anchors[1]}): delta ${number(delta.mean)} years (95% interval ${number(delta.lower)}–${number(delta.upper)}).`, 'help'));
+          continue;
+        }
+        const section = node('section', undefined, 'phase-delta-result'); output.append(section);
+        section.append(node('p', `${delta.after} input delta to q=${delta.anchor}: ${number(delta.mean)} years (95% interval ${number(delta.lower)}–${number(delta.upper)}). Reference: youngest of ${delta.predecessors.map(p => `${p.label} q=${p.anchor}`).join(', ')}.`, 'help'));
+        if (delta.predecessors.length > 1) section.append(node('p', `Reference shares: ${delta.predecessors.map(p => `${p.label}: ${(100 * p.share).toFixed(1)}%`).join(', ')}. Exact ties share credit equally.`, 'help'));
+        plots.push(createDeltaPlot(section, delta));
+      }
     }
     for (const phase of result.phases) {
       const section = node('section', undefined, 'phase-result'); section.append(node('h3', phase.label));
@@ -126,13 +137,13 @@ export function initPhaseRun() {
     const excluded = (state.data?.events.length ?? 0) - data.events.length;
     panel.append(node('p', `${data.phases.length} phases · ${data.events.length} matching events · ${excluded} project events outside these phase labels. Membership uses exact labels; calibration selection is separate.`, 'help'));
     const fields = node('div', undefined, 'phase-fields');
-    const deltaLabel = node('label', 'Delta prior scale · years');
+    const deltaLabel = node('label', 'Default input delta prior scale · years');
     const delta = node('input'); delta.type = 'number'; delta.step = 'any'; delta.min = '0'; delta.id = 'phase-delta-scale';
     delta.value = data.settings.delta_scale ?? ''; delta.placeholder = 'Auto from phase prior time scales';
     delta.addEventListener('input', () => update({ delta_scale: delta.value === '' ? null : Number(delta.value) }));
     deltaLabel.append(delta); fields.append(deltaLabel); panel.append(fields);
-    panel.append(node('p', 'When connections are enabled, each directed connection links its source phase’s younger (or sole) anchor to its target phase’s older anchor. Delta has a positive half-normal prior; it measures anchor separation and is a phase gap only for end-to-start ordering. Downstream locations are derived; only chain roots retain independent location priors.', 'help'));
-    panel.append(node('p', 'Blank phase priors use the labelled measurements: location mean = mean measurement centers; reference time scale = max(center range, median measurement SD). Positive scale has a log-normal prior with log SD 0.75 and reference sigma 0.2 × time scale (uniform width = √12 × reference sigma). Auto delta scale uses the larger time scale of adjacent phases. Review priors for your model.', 'help'));
+    panel.append(node('p', 'When connections are enabled, each non-root phase owns one positive input delta from the youngest connected predecessor younger/sole anchor to its own older/sole anchor. Branches have separate receiving-phase deltas; merges use the exact maximum predecessor anchor on each draw. Delta has a half-normal prior and is an anchor separation, not automatically a gap. Root phases have no input delta and retain independent location priors.', 'help'));
+    panel.append(node('p', 'Blank phase priors use labelled measurements: location mean = mean measurement centers; reference time scale = max(center range, median measurement SD). Positive scale has a log-normal prior with log SD 0.75 and reference sigma 0.2 × time scale (uniform width = √12 × reference sigma). A card’s input delta scale overrides the default above; Auto uses the largest reference time scale of the receiver and its predecessors. Review priors for your model.', 'help'));
     panel.append(samplingControls(data.sampling, sampling => update({ sampling })));
     const status = node('p', running ? 'Inference submitted. Progress, cancellation and messages are above the tabs.' : message || error(data) || '', 'help');
     status.id = 'phase-fit-status'; status.setAttribute('role', 'status');
